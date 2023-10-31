@@ -491,7 +491,21 @@ int main(int argc, char **argv)
         /* compute the inside of the chunk */
         for (int k = 1; k < dim_chunk[0]-1; ++k) {   // z
             //int v = k * n * m;
-            do_xy_plane(chunk, new_chunk, n, m, o, k, dim_chunk, dividers, p);
+            do_xy_plane(chunk, new_chunk, n, m, o, k, dim_chunk, dividers, p, 1);
+        }
+
+        int indx
+        for (int i = 0; i < 4; i++) {
+            MPI_Waitany(4, rec, &indx, MPI_STATUS_IGNORE);
+            switch(indx) {
+                case 0 :
+                    for (int j = 0; j < dim_chunk[1]; ++j) {
+                        for (int k = 0; k < dim_chunk[2]; ++k) {
+                            chunk[j*dim_chunk[0] + k*dim_chunk[0]*dim_chunk[1]] = east_r[j*dim_chunk[2] + k];
+                        }
+                    }
+                    do_yz_plane(chunk, new_chunk, n, m, o, )
+            }
         }
 
             /* each second, we test the convergence, and print a short progress report */
