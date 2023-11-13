@@ -174,7 +174,8 @@ static inline double update_temperature(const double *T, int u, int n, int m, in
 
 /* Run the simulation on the k-th xy plane.
  * v is the index of the start of the k-th xy plane in the arrays T and R. */
-static inline void do_xy_plane(const double *T, double *R, int n, int m, int o, int k, int *dim_chunk, int p, int inside)
+static inline void do_xy_plane(const double *T, double *R, int *edges, 
+                               int n, int m, int o, int k, int *dim_chunk, int p, int inside) // A FAIRE
 {
     int T_i = (p*dim_chunk[0])%n;
     int T_j = ((p*dim_chunk[0]/n)*dim_chunk[1])%m;
@@ -194,7 +195,8 @@ static inline void do_xy_plane(const double *T, double *R, int n, int m, int o, 
     }
 }
 
-static inline void do_xz_plane(const double *T, double *R, int n, int m, int o, int j, int *dim_chunk, int p, int inside)
+static inline void do_xz_plane(const double *T, double *R, int *edges, 
+                               int n, int m, int o, int j, int *dim_chunk, int p, int inside) // A FAIRE
 {
     int T_i = (p*dim_chunk[0])%n;
     int T_j = ((p*dim_chunk[0]/n)*dim_chunk[1])%m + j;
@@ -215,7 +217,8 @@ static inline void do_xz_plane(const double *T, double *R, int n, int m, int o, 
     }
 }
 
-static inline void do_yz_plane(const double *T, double *R, int n, int m, int o, int i, int *dim_chunk, int p, int inside)
+static inline void do_yz_plane(const double *T, double *R,  int *edges, 
+                                int n, int m, int o, int i, int *dim_chunk, int p, int inside) // A FAIRE
 {
     int T_i = (p*dim_chunk[0])%n + i;
     int T_j = ((p*dim_chunk[0]/n)*dim_chunk[1])%m;
@@ -236,101 +239,6 @@ static inline void do_yz_plane(const double *T, double *R, int n, int m, int o, 
     }
 }
 
-
-static inline int do_edge(const double *halo_1, int id1, const double *halo_2, int id2,
-                          double *R, int n, int m, int o, int i, int *dim_chunk, int p) {
-/**
- * @param id1 id de halo_1 (0 pour east, 1 pour south, 2 pour west, 3 pour north)
- * @param id2 id de halo_2 (0 pour east, 1 pour south, 2 pour west, 3 pour north)
- */
-
- /* ICI ON VEUT ALLOUER LES ANGLES (TAILLE 3*3*CHUNK2)
-    POUR CA IL FAUT ALLER DANS HALO 1 ET 2 POUR REMPLIR
-
- */
-
-    if (id1 == id2 || id1 - id2 == 2 || id1 - id2 == -2 ) {
-        return EXIT_FAILURE;
-    }
-
-    int *edge = malloc(sizeof(double)*3*3*dim_chunk[2]); // car dim 2
-    /* edge(i,j,k) = edge[i*3*dim_chunk[2] + j*dim_chunk[2] + k] */
-    
-    if (edge == NULL) {
-        perror("do_edge : malloc");
-        return EXIT_FAILURE;
-    }
-
-    if (id1 < id2) {
-        const int tmp = id1;
-        id1 = id2;
-        id2 = tmp;
-
-        const double *tab_tmp = halo_1;
-        halo_2 = halo_1;
-        halo_1 = tab_tmp;
-    }
-
-    if (id1 == 1 && id2 == 0) { /* south-east */
-
-        for (int i = 0; i < 2; ++i) {
-
-            for (int j = 0; j < 3; ++j) {
-                
-                for (int k = 0; k < dim_chunk[2]; ++k) {
-                    edge[i*3*dim_chunk[2] + j*dim_chunk[2] + k] = halo_1[i*3*dim_chunk[2] + k*3 + j];
-                }
-                    
-            }
-        }
-
-        for (int j = 0; j < 3; ++j) {  //int i = 2;
-        
-            for (int k = 0; k < dim_chunk[2]; ++k) {
-                edge[2*3*dim_chunk[2] + j*dim_chunk[2] + k] = halo_2[2*3*dim_chunk[2] + k*3];
-            }
-                
-        }
-    }
-
-    else if (id1 == 3 && id2 == 0) { /* north-east */
-
-        for (int i = 0; i < 3; ++i) {
-
-            for (int j = 1; j < 3; ++j) {
-                
-                for (int k = 0; k < dim_chunk[2]; ++k) {
-                    edge[i*2*dim_chunk[2] + j*dim_chunk[2] + k] = halo_1[i*3*dim_chunk[2] + k*3 + j];
-                }
-                    
-            }
-        }
-
-        for (int i = 0; i < 3; ++i) {   //int j = 0;
-
-            for (int k = 0; k < dim_chunk[2]; ++k) {
-
-                edge[i*2*dim_chunk[2] + k] = halo_2[i*3*dim_chunk[2] + k*3];
-            }
-                
-        }
-        
-    }
-
-    else if (id1 == 2 && id2 == 1) { /* west-south */
-
-    }
-
-    else if (id1 == 3 && id2 == 2) { /* north-west */
-
-    }
-
-
-
-
-}
-
-
 int *get_3_dividers(int n)
 {
     int i = floor(cbrt(n));
@@ -348,14 +256,52 @@ int *get_3_dividers(int n)
 	perror("malloc");
 	exit(1);	
     }
-    tab[0] = k;
-    tab[1] = j;
-    tab[2] = i;
+    if (k<j) {
+        if (i<j) {
+            tab[0] = j;
+            if (k<i) {
+                tab[1] = i;
+                tab[2] = k;
+            }
+            else {
+                tab[1] = k;
+                tab[2] = i;
+            }
+        }
+        else {
+            tab[0] = i;
+            tab[1] = j;
+            tab[2] = k;
+        }
+        
+    }
+
+    else if (j<k) {
+        if (i<k) {
+            tab[0] = k;
+            if (j<i) {
+                tab[1] = i;
+                tab[2] = j;
+            }
+            else {
+                tab[1] = j;
+                tab[2] = i;
+            }
+        }
+        else {
+            tab[0] = i;
+            tab[1] = k;
+            tab[2] = j;
+        }
+        
+    }
+
     return tab;
 }
 
+
 void malloc_blocs(int size_chunk, int *dim_chunk,
-		double *chunk, double *new_chunk, double *halo_e, double *halo_w, double *halo_n, double *halo_s,
+		double *chunk, double *new_chunk, double *halo,
 		double *east_r, double *west_r, double *north_r, double *south_r,
         double *east_s, double *west_s, double *north_s, double *south_s) 
         // TODO 1: malloc que si nécessaire (pas les bords) -> modifier TODO 2
@@ -370,22 +316,7 @@ void malloc_blocs(int size_chunk, int *dim_chunk,
         perror("malloc_blocs : malloc");
 	    exit(1);
     }
-    halo_e = malloc(dim_chunk[1]*dim_chunk[2]*3*sizeof(double));
-    if (chunk == NULL){
-        perror("malloc_blocs : malloc");
-        exit(1);
-    }
-    halo_w = malloc(dim_chunk[1]*dim_chunk[2]*3*sizeof(double));
-    if (chunk == NULL){
-        perror("malloc_blocs : malloc");
-        exit(1);
-    }
-    halo_n = malloc(dim_chunk[0]*dim_chunk[2]*3*sizeof(double));
-    if (chunk == NULL){
-        perror("malloc_blocs : malloc");
-        exit(1);
-    }
-    halo_s = malloc(dim_chunk[0]*dim_chunk[2]*3*sizeof(double));
+    halo = calloc(sizeof(double),(dim_chunk[0]+2)*(dim_chunk[1]+2)*(dim_chunk[2]+2));
     if (chunk == NULL){
         perror("malloc_blocs : malloc");
         exit(1);
@@ -432,39 +363,70 @@ void malloc_blocs(int size_chunk, int *dim_chunk,
     }
 }
 
-void fill_halo(double *chunk, int *dim_chunk, 
-        double *east, double *west, double *north, double *south, 
-        double *halo_e, double *halo_w, double *halo_n, double *halo_s) {
-        /* We suppose that the chunk size is > 1 */
+void fill_halo(double *tab, int *dim_chunk, double *halo, int index) { 
+    /* index = -1 (center) / 0 (east) / 1 (south) / 2 (west) / 3 (north) */
+    
+    switch(index) {
         
-        for (int k = 0; k < dim_chunk[2]; ++k) {
-            for (int i = 0; i < dim_chunk[0]; ++k) {
-                halo_n[i*dim_chunk[2]*3 + k*3] = north[i*dim_chunk[2] + k];
-                halo_s[i*dim_chunk[2]*3 + k*3] = south[i*dim_chunk[2] + k];
-            }
+        case -1 : // center
+            for (int i = 1; i  < dim_chunk[0]+1; ++i) {
 
-            for (int j = 0; j < dim_chunk[1]; ++j) {
-                halo_e[j*dim_chunk[2]*3 + k*3] = east[j*dim_chunk[2] + k];
-                halo_w[j*dim_chunk[2]*3 + k*3] = west[j*dim_chunk[2] + k];
-            }
-        }
-        
-        for (int l = 1; l < 3; ++l) {
+                for (int j = 1; j < dim_chunk[1]+1; ++j) {
 
-            for (int k = 0; k < dim_chunk[2]; ++k) {
-
-                for (int i = 0; i < dim_chunk[0]; ++k) {
-                    halo_n[i*dim_chunk[2]*3 + k*3 + l] = chunk[k*dim_chunk[0]*dim_chunk[1] + (dim_chunk[1]-l)*dim_chunk[0]+ i]; // halo_n(l,i,k) = halo_n[i*chunk2*3 + k*3 + l]
-                    halo_s[i*dim_chunk[2]*3 + k*3 + l] = chunk[k*dim_chunk[0]*dim_chunk[1] + (l-1)*dim_chunk[0] + i];
-                }
-
-                for (int j = 0; j < dim_chunk[1]; ++j) {
-                    halo_e[j*dim_chunk[2]*3 + k*3 + l] = chunk[dim_chunk[0]-l + j*dim_chunk[0] + k*dim_chunk[0]*dim_chunk[1]];
-                    halo_w[j*dim_chunk[2]*3 + k*3 + l] = chunk[(l-1) + j*dim_chunk[0] + k*dim_chunk[0]*dim_chunk[1]];
+                    for (int k = 1; k < dim_chunk[2]+1; ++k) {
+                        halo[i + j*(dim_chunk[0]+2) + k*(dim_chunk[0]+2)*(dim_chunk[1]+2)] 
+                        = tab[(i-1) + (j-1)*dim_chunk[0] + (k-1)*dim_chunk[0]*dim_chunk[1]];
+                    }
                 }
             }
-        }
+            break;
+        
+        case 0 : // east
+            for (int j = 1; j < dim_chunk[1]+1; ++j) {
+
+                for (int k = 1; k < dim_chunk[2]+1; ++k) { // i = dim_chunk[0]-1
+                    halo[dim_chunk[0]-1 + j*(dim_chunk[0]+2) + k*(dim_chunk[0]+2)*(dim_chunk[1]+2)]
+                        = tab[j*dim_chunk[2] + k];
+                }
+            }
+            break;
+
+        case 1 : // south
+            for (int i = 1; i < dim_chunk[0]+1; ++i) {
+
+                for (int k = 1 ; k < dim_chunk[2]+1; ++k) { // j = 0
+                    halo[i + k*(dim_chunk[0]+2)*(dim_chunk[1]+2)] 
+                        = tab[i*dim_chunk[2] + k];
+                }
+
+            }
+            break;
+
+        case 2 : // west
+            for (int j = 1; j < dim_chunk[1]+1; ++j) {
+
+                for (int k = 1; k < dim_chunk[2]+1; ++k) { // i = 0
+                    halo[j*(dim_chunk[0]+2) + k*(dim_chunk[0]+2)*(dim_chunk[1]+2)]
+                        = tab[j*dim_chunk[2] + k];
+                }
+            }
+            break;
+        
+        case 3 : // north
+            for (int i = 1; i < dim_chunk[0]+1; ++i) {
+
+                for (int k = 1 ; k < dim_chunk[2]+1; ++k) { // j = dim_chunk[1]-1
+                    halo[i + (dim_chunk[1]-1)*dim_chunk[0] + k*(dim_chunk[0]+2)*(dim_chunk[1]+2)] 
+                        = tab[i*dim_chunk[2] + k];
+                }
+
+            }
+            break;
+            
+        default :
+            return;
     }
+}
 
 int main(int argc, char **argv)
 {
@@ -539,13 +501,10 @@ int main(int argc, char **argv)
     double *north_s; // north(i,k) = north[i*chunk2 + k] = chunk(i,0,k)
     double *south_s; // south(i,k) = south[i*chunk2 + k] = chunk(i,0,k)
 
-    double *halo_e;  // halo_e(l,j,k) = halo_e[j*chunk2*3 + k*3 + l] 
-    double *halo_w;  // halo_w(l,j,k) = halo_w[j*chunk2*3 + k*3 + l]
-    double *halo_n;  // halo_n(i,l,k) = halo_n[i*chunk2*3 + k*3 + l]
-    double *halo_s;  // halo_s(i,l,k) = halo_s[i*chunk2*3 + k*3 + l]
+    double *halo;  // halo(i,j,k) = halo[i +j*chunk0+2 + k*chunk0+2*chunk1+2] 
 
     malloc_blocs(size_chunk, dim_chunk, chunk, new_chunk,
-		    halo_e, halo_w, halo_n, halo_s, east_r, west_r, north_r, south_r, 
+		    halo, east_r, west_r, north_r, south_r, 
             east_s, west_s, north_s, south_s);
 
     /* initially the heatsink is at the temperature of the water-cooling fluid */
@@ -558,13 +517,6 @@ int main(int argc, char **argv)
     int convergence = 0;
 
 
-    /*int pos_first_cel = (p*dim_chunk[0])%dividers[0] 
-	    + ((p*dim_chunk[1])%dividers[1])*n 
-	    + ((p*dim_chunk[2])%dividers[2])*n*m;
-    int pos_last_cel = (p*dim_chunk[0])%dividers[0] + dim_chunk[0]-1
-	    + ((p*dim_chunk[1])%dividers[1] + dim_chunk[1]-1)*n 
-	    + ((p*dim_chunk[2])%dividers[2] + dim_chunk[2]-1)*n*m;
-    */
     /* simulating time steps */
     while (convergence == 0) {
         /* Update all cells. xy planes are processed, for increasing values of z. */
@@ -636,56 +588,45 @@ int main(int argc, char **argv)
                     MPI_DOUBLE, p+n, 3, MPI_COMM_WORLD,
                     &sen[3]);
         }
-
+        
+        int *edges = calloc(sizeof(int), 4);
+        if (edges == NULL) {
+            perror("malloc main");
+            return EXIT_FAILURE;
+        }
+        
         /* compute the inside of the chunk */
         for (int k = 1; k < dim_chunk[0]-1; ++k) {
-            do_xy_plane(chunk, new_chunk, n, m, o, k, dim_chunk, p, 1);
+            do_xy_plane(chunk, new_chunk, edges, n, m, o, k, dim_chunk, p, 1);
         }
 
         int indx;
-        fill_halo(chunk, dim_chunk ,east_r, west_r, north_r, south_r, halo_e, halo_w, halo_n, halo_s);
+        fill_halo(chunk, dim_chunk, halo, -1);
 
         for (int i = 0; i < 4; i++) {
-            MPI_Waitany(4, rec, &indx, MPI_STATUS_IGNORE); // A REFAIRE
+            MPI_Waitany(4, rec, &indx, MPI_STATUS_IGNORE);
+
+            edges[indx] = 1;
+
             switch(indx) {
                 case 0 : //east
-                    for (int j = 1; j < dim_chunk[1]+1; ++j) {
-                        for (int k = 1; k < dim_chunk[2]+1; ++k) {
-                            halo[(dim_chunk[0]+1) + j*(dim_chunk[0]+2) + k*(dim_chunk[0]+2)*(dim_chunk[1]+2)] 
-                            = east_r[(j-1)*dim_chunk[2] + k-1];
-                        }
-                    }
-                    do_yz_plane(halo, new_chunk, n, m, o, 0, dim_chunk, p, 0);
+                    fill_halo(east_r, dim_chunk, halo, 0);
+                    do_yz_plane(halo, new_chunk, edges, n, m, o, dim_chunk[0]-1, dim_chunk, p, 0);
                     break;
 
                 case 1 : //south
-                    for (int i = 1; i < dim_chunk[1]+1; ++i) {
-                        for (int k = 1; k < dim_chunk[2]+1; ++k) {
-                            halo[i + k*(dim_chunk[0]+2)*(dim_chunk[1]+2)] 
-                            = south_r[(i-1)*dim_chunk[2] + k-1];
-                        }
-                    }
-                    do_xz_plane(halo, new_chunk, n, m, o, 0, dim_chunk, p, 0);
+                    fill_halo(east_r, dim_chunk, halo, 0);
+                    do_xz_plane(halo, new_chunk, edges, n, m, o, 0, dim_chunk, p, 0);
                     break;
 
                 case 2 : //west
-                    for (int j = 1; j < dim_chunk[1]+1; ++j) {
-                        for (int k = 1; k < dim_chunk[2]+1; ++k) {
-                            halo[j*(dim_chunk[0]+2) + k*(dim_chunk[0]+2)*(dim_chunk[1]+2)] 
-                            = west_r[(j-1)*dim_chunk[2] + k-1];
-                        }
-                    }
-                    do_yz_plane(halo, new_chunk, n, m, o, 0, dim_chunk, p, 0);
+                    fill_halo(east_r, dim_chunk, halo, 0);
+                    do_yz_plane(halo, new_chunk, edges, n, m, o, 0, dim_chunk, p, 0);
                     break;
 
                 case 3 : //north
-                    for (int i = 1; i < dim_chunk[0]+1; ++i) {
-                        for (int k = 1; k < dim_chunk[2]+1; ++k) {
-                            halo[(dim_chunk[1]+1) + j*(dim_chunk[0]+2) + k*(dim_chunk[0]+2)*(dim_chunk[1]+2)]
-                            = north_r[(i-1)*dim_chunk[2] + k-1];
-                        }
-                    }
-                    do_xz_plane(halo, new_chunk, n, m, o, dim_chunk[1]-1, dim_chunk, p, 0);
+                    fill_halo(east_r, dim_chunk, halo, 0);
+                    do_xz_plane(halo, new_chunk, edges, n, m, o, dim_chunk[1]-1, dim_chunk, p, 0);
                     break;
                     
                 default :
