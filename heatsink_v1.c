@@ -177,7 +177,7 @@ static inline double update_temperature(const double c, const double f, const do
 /* Run the simulation on the k-th xy plane.
  * v is the index of the start of the k-th xy plane in the arrays T and R. */
 static inline void do_xy_plane(const double *T, double *R, 
-                               int n, int m, int o, int k, int *dim_chunk, int p, int inside) // A FAIRE
+                               int n, int m, int o, int k, int *dim_chunk, int p, int inside)
 {
     int T_i = (p*dim_chunk[0])%n;
     int T_j = ((p*dim_chunk[0]/n)*dim_chunk[1])%m;
@@ -186,10 +186,12 @@ static inline void do_xy_plane(const double *T, double *R,
     if (T_k == 0) // we do not modify the z = 0 plane: it is maintained at constant temperature via water-cooling
         return;
 
+    int u;
     for (int j = inside; j < dim_chunk[1]-inside; ++j) {   // y
         for (int i = inside; i < dim_chunk[0]-inside; ++i) {   // x
-            int u = k*dim_chunk[1]*dim_chunk[0] + j * dim_chunk[0] + i;
-            R[u] = update_temperature(T, u, n, m, o, T_i, T_j, T_k);
+            u = k*dim_chunk[1]*dim_chunk[0] + j * dim_chunk[0] + i;
+            R[u] = update_temperature(T[u], T[u - dim_chunk[0]*dim_chunk[1]], T[u + dim_chunk[0]*dim_chunk[1]],
+                                        T[u - dim_chunk[0]], T[u + dim_chunk[0]], T[u - 1], T[u + 1], n, m, o, T_i, T_j, T_k);
             ++T_i;
         }
         T_i -= dim_chunk[0] + 2*inside;
@@ -241,10 +243,19 @@ static inline void do_xy_plane(const double *T, double *R,
 //     }
 // }
 
+
 static inline void do_halo(const double *T, double *R,  double *front_r, double *back_r, 
                             double *south_r, double *north_r, double *west_r, double *east_r, 
-                            int n, int m, int o, int i, int *dim_chunk, int p, int inside) {
-    
+                            int n, int m, int o, int *dim_chunk, int p) {
+/**
+ * @param T chunk at time t
+ * @param R chunk at time t+1
+ * @param n dim of the whole data on x
+ * @param m dim of the whole data on y
+ * @param o dim of the whole data on z
+ * @param p current processor's rank
+ */
+
     int T_i = (p*dim_chunk[0])%n;
     int T_j = ((p*dim_chunk[0]/n)*dim_chunk[1])%m;
     int T_k = ( ( (p*dim_chunk[0]/n)*dim_chunk[1] )/m )*dim_chunk[2];
@@ -565,98 +576,8 @@ int *get_3_dividers(int n)
 
     return tab;
 }
-
-
-void malloc_blocs(int size_chunk, int *dim_chunk, int *dividers,
-		double *chunk, double *new_chunk, double *halo,
-		double *front_r, double *back_r, double *south_r, double *north_r, double *west_r, double *east_r,
-        double *front_s, double *back_s, double *south_s, double *north_s, double *west_s, double *east_s) 
-{
-    chunk = malloc(size_chunk*sizeof(double));
-    if (chunk == NULL){
-        perror("malloc_blocs : malloc");
-	    exit(1);
-    }
-    new_chunk = malloc(size_chunk*sizeof(double));
-    if (new_chunk == NULL){
-        perror("malloc_blocs : malloc");
-	    exit(1);
-    }
-    halo = calloc(sizeof(double),(dim_chunk[0]+2)*(dim_chunk[1]+2)*(dim_chunk[2]+2));
-    if (chunk == NULL){
-        perror("malloc_blocs : malloc");
-        exit(1);
-    }
     
-    if (dividers[2] > 1) {
-        front_r = malloc((dim_chunk[0])*(dim_chunk[1])*sizeof(double));
-        if (front_r == NULL){
-            perror("malloc_blocs : malloc");
-            exit(1);
-        }
-        back_r = malloc((dim_chunk[0])*(dim_chunk[1])*sizeof(double));
-        if (back_r == NULL){
-            perror("malloc_blocs : malloc");
-            exit(1);
-        }
-        front_s = malloc((dim_chunk[0])*(dim_chunk[1])*sizeof(double));
-        if (front_s == NULL){
-            perror("malloc_blocs : malloc");
-            exit(1);
-        }
-        back_s = malloc((dim_chunk[0])*(dim_chunk[1])*sizeof(double));
-        if (back_s == NULL){
-            perror("malloc_blocs : malloc");
-            exit(1);
-        }
-    }
-
-    if (dividers[1] > 1) {
-        south_r = malloc((dim_chunk[0])*(dim_chunk[2])*sizeof(double));
-        if (south_r == NULL){
-            perror("malloc_blocs : malloc");
-            exit(1);
-        }
-        north_r = malloc((dim_chunk[0])*(dim_chunk[2])*sizeof(double));
-        if (north_r == NULL){
-            perror("malloc_blocs : malloc");
-            exit(1);
-        }
-        south_s = malloc((dim_chunk[0])*(dim_chunk[2])*sizeof(double));
-        if (south_s == NULL){
-            perror("malloc_blocs : malloc");
-            exit(1);
-        }
-        north_s = malloc((dim_chunk[0])*(dim_chunk[2])*sizeof(double));
-        if (north_s == NULL){
-            perror("malloc_blocs : malloc");
-            exit(1);
-        }
-    }
-    
-    if (dividers[0] > 1) {
-        west_r = malloc((dim_chunk[1])*(dim_chunk[2])*sizeof(double));
-        if (west_r == NULL){
-            perror("malloc_blocs : malloc");
-            exit(1);
-        }
-        east_r = malloc((dim_chunk[1])*(dim_chunk[2])*sizeof(double));
-        if (east_r == NULL){
-            perror("malloc_blocs : malloc");
-            exit(1);
-        }
-        west_s = malloc((dim_chunk[1])*(dim_chunk[2])*sizeof(double));
-        if (west_s == NULL){
-            perror("malloc_blocs : malloc");
-            exit(1);
-        }
-        east_s = malloc((dim_chunk[1])*(dim_chunk[2])*sizeof(double));
-        if (east_s == NULL){
-            perror("malloc_blocs : malloc");
-            exit(1);
-        }
-    }
-}
+ 
 
 // void fill_halo(double *tab, int *dim_chunk, double *halo, int index) { // A MODIFIER
 //     /* index = -1 (center) / 0 (front) / 1 (back) / 2 (west) / 3 (east) / 4 (south) /5 (north) */
@@ -759,6 +680,7 @@ int main(int argc, char **argv)
     dim_chunk[0] = n/dividers[0];
     dim_chunk[1] = m/dividers[1];
     dim_chunk[2] = o/dividers[2];
+    fprintf(stderr, "dimchunk : %d %d %d\n",dim_chunk[0], dim_chunk[1], dim_chunk[2]);
     
     fprintf(stderr, "HEATSINK\n");
     fprintf(stderr, "\tDimension (cm) [x,y,z] = %.1f x %.1f x %.1f\n", 100 * L, 100 * E, 100 * l);
@@ -800,11 +722,89 @@ int main(int argc, char **argv)
     double *west_s;  // west(j,k)  = west[k*chunk1 + j]  = chunk(0,j,k)    
     double *east_s;  // east(j,k)  = east[k*chunk1 + j]  = chunk(0,j,k)
 
-    double *halo;  // halo(i,j,k) = halo[i + j*(chunk0+2) + k*(chunk0+2)*(chunk1+2)] 
+    fprintf(stderr, "test1\n");
 
-    malloc_blocs(size_chunk, dim_chunk, dividers, chunk, new_chunk,
-		    halo, front_r, back_r, south_r, north_r, west_r, east_r,
-            front_s, back_s, south_s, north_s, west_s, east_s);
+    chunk = malloc(size_chunk*sizeof(double));
+    if (chunk == NULL){
+        perror("malloc_blocs : malloc");
+	    exit(1);
+    }
+    new_chunk = malloc(size_chunk*sizeof(double));
+    if (new_chunk == NULL){
+        perror("malloc_blocs : malloc");
+	    exit(1);
+    }
+    
+    if (dividers[2] > 1) {
+        front_r = malloc((dim_chunk[0])*(dim_chunk[1])*sizeof(double));
+        if (front_r == NULL){
+            perror("malloc_blocs : malloc");
+            exit(1);
+        }
+        back_r = malloc((dim_chunk[0])*(dim_chunk[1])*sizeof(double));
+        if (back_r == NULL){
+            perror("malloc_blocs : malloc");
+            exit(1);
+        }
+        front_s = malloc((dim_chunk[0])*(dim_chunk[1])*sizeof(double));
+        if (front_s == NULL){
+            perror("malloc_blocs : malloc");
+            exit(1);
+        }
+        back_s = malloc((dim_chunk[0])*(dim_chunk[1])*sizeof(double));
+        if (back_s == NULL){
+            perror("malloc_blocs : malloc");
+            exit(1);
+        }
+    }
+
+    if (dividers[1] > 1) {
+        south_r = malloc((dim_chunk[0])*(dim_chunk[2])*sizeof(double));
+        if (south_r == NULL){
+            perror("malloc_blocs : malloc");
+            exit(1);
+        }
+        north_r = malloc((dim_chunk[0])*(dim_chunk[2])*sizeof(double));
+        if (north_r == NULL){
+            perror("malloc_blocs : malloc");
+            exit(1);
+        }
+        south_s = malloc((dim_chunk[0])*(dim_chunk[2])*sizeof(double));
+        if (south_s == NULL){
+            perror("malloc_blocs : malloc");
+            exit(1);
+        }
+        north_s = malloc((dim_chunk[0])*(dim_chunk[2])*sizeof(double));
+        if (north_s == NULL){
+            perror("malloc_blocs : malloc");
+            exit(1);
+        }
+    }
+
+    if (dividers[0] > 1) {
+        west_r = malloc((dim_chunk[1])*(dim_chunk[2])*sizeof(double));
+        if (west_r == NULL){
+            perror("malloc_blocs : malloc");
+            exit(1);
+        }
+        east_r = malloc((dim_chunk[1])*(dim_chunk[2])*sizeof(double));
+        if (east_r == NULL){
+            perror("malloc_blocs : malloc");
+            exit(1);
+        }
+        west_s = malloc((dim_chunk[1])*(dim_chunk[2])*sizeof(double));
+        if (west_s == NULL){
+            perror("malloc_blocs : malloc");
+            exit(1);
+        }
+        east_s = malloc((dim_chunk[1])*(dim_chunk[2])*sizeof(double));
+        if (east_s == NULL){
+            perror("malloc_blocs : malloc");
+            exit(1);
+        }
+    }
+    
+    fprintf(stderr, "test2\n");
 
     /* initially the heatsink is at the temperature of the water-cooling fluid */
     for (int u = 0; u < size_chunk; u++)
@@ -815,9 +815,11 @@ int main(int argc, char **argv)
     int n_steps = 0;
     int convergence = 0;
 
+    fprintf(stderr, "test3\n");
 
     /* simulating time steps */
     while (convergence == 0) {
+        fprintf(stderr, "test4\n");
         /* Update all cells. xy planes are processed, for increasing values of z. */
 	/* Ask for all the Irecv (check the border conditions)
 	 * prepare the data and Isend them
@@ -827,44 +829,68 @@ int main(int argc, char **argv)
 	 * */
 
         /* receive the sides from others */
-        int test_f = p >= dividers[2]*dividers[1];
-        int test_b = p < dividers[2]*dividers[1]*(dividers[0]-1);
-        int test_s = p%(dividers[2]*dividers[1]) >= dividers[2]*(dividers[1]-1);
-        int test_n = p%(dividers[2]*dividers[1]) < dividers[2];
-        int test_w = p%dividers[2] != 0;
-        int test_e = p%dividers[2] != dividers[2]-1;
+        // int test_f = my_rank >= dividers[2]*dividers[1];
+        // int test_b = my_rank < dividers[2]*dividers[1]*(dividers[0]-1);
+
+
+
+        // int test_s = my_rank%(dividers[2]*dividers[1]) >= dividers[2]*(dividers[1]-1);
+        // int test_n = my_rank%(dividers[2]*dividers[1]) < dividers[2];
+
+
+
+        // int test_w = my_rank%dividers[2] != 0;
+        // int test_e = my_rank%dividers[2] != dividers[2]-1;
+
+        int test_f = my_rank >= dividers[0]*dividers[1];
+        int test_b = my_rank < dividers[0]*dividers[1]*(dividers[2]-1);
+        int test_s = my_rank%(dividers[0]*dividers[1])  - dividers[0] >= 0 ;
+        int test_n = my_rank%(dividers[0]*dividers[1])  + dividers[0] < dividers[0]*dividers[1];
+        int test_w = my_rank%dividers[0] != 0;
+        int test_e = my_rank%dividers[0] != dividers[0]-1;
+
+        int nb_neigh = test_f + test_b + test_s + test_n + test_w + test_e;
+        int cpt = 0;
         
-        MPI_Request rec[6];
+        MPI_Request rec[nb_neigh];
         if (test_f) {
+            printf("0\n");
             MPI_Irecv(front_r, (dim_chunk[0])*(dim_chunk[1]),
-                    MPI_DOUBLE, p-dividers[2]*dividers[1], 0, MPI_COMM_WORLD,
-                    &rec[0]);
+                    MPI_DOUBLE, my_rank-dividers[0]*dividers[1], 0, MPI_COMM_WORLD,
+                    &rec[cpt++]);
         }
         if (test_b) {
+            printf("1\n");
             MPI_Irecv(back_r, (dim_chunk[0])*(dim_chunk[1]),
-                    MPI_DOUBLE, p+dividers[2]*dividers[1], 1, MPI_COMM_WORLD,
-                    &rec[1]);
+                    MPI_DOUBLE, my_rank+dividers[0]*dividers[1], 1, MPI_COMM_WORLD,
+                    &rec[cpt++]);
         }
         if (test_s) {
+            printf("2\n");
             MPI_Irecv(south_r, (dim_chunk[0])*(dim_chunk[2]),
-                    MPI_DOUBLE, p-dividers[2], 2, MPI_COMM_WORLD,
-                    &rec[2]);
+                    MPI_DOUBLE, my_rank-dividers[0], 2, MPI_COMM_WORLD,
+                    &rec[cpt++]);
         } 
         if (test_n) {
+            printf("3\n");
             MPI_Irecv(north_r, (dim_chunk[0])*(dim_chunk[2]),
-                    MPI_DOUBLE, p+dividers[2], 3, MPI_COMM_WORLD,
-                    &rec[3]);
+                    MPI_DOUBLE, my_rank+dividers[0], 3, MPI_COMM_WORLD,
+                    &rec[cpt++]);
         }
         if (test_w) {
+            printf("4\n");
             MPI_Irecv(west_r, (dim_chunk[1])*(dim_chunk[2]),
-                    MPI_DOUBLE, p-1, 4, MPI_COMM_WORLD,
-                    &rec[4]);
+                    MPI_DOUBLE, my_rank-1, 4, MPI_COMM_WORLD,
+                    &rec[cpt++]);
         }
         if (test_e) {
+            printf("5\n");
             MPI_Irecv(east_r, (dim_chunk[1])*(dim_chunk[2]),
-                    MPI_DOUBLE, p+1, 5, MPI_COMM_WORLD,
-                    &rec[5]);
+                    MPI_DOUBLE, my_rank+1, 5, MPI_COMM_WORLD,
+                    &rec[cpt]);
         }
+
+        fprintf(stderr, "test5\n");
 
         /* create the sides for neighbours */
         if (test_f && test_b) {
@@ -935,40 +961,44 @@ int main(int argc, char **argv)
                 }
             } 
         }
+        fprintf(stderr, "test6\n");
         
+        cpt = 0;
         /* sends the sides to neighbours */
-        MPI_Request sen[6];
+        MPI_Request sen[nb_neigh];
         if (test_f) {
             MPI_Isend(front_r, (dim_chunk[0])*(dim_chunk[1]),
-                    MPI_DOUBLE, p-dividers[2]*dividers[1], 0, MPI_COMM_WORLD,
-                    &sen[0]);
+                    MPI_DOUBLE, my_rank-dividers[0]*dividers[1], 0, MPI_COMM_WORLD,
+                    &sen[cpt++]);
         }
         if (test_b) {
             MPI_Isend(back_r, (dim_chunk[0])*(dim_chunk[1]),
-                    MPI_DOUBLE, p+dividers[2]*dividers[1], 1, MPI_COMM_WORLD,
-                    &sen[1]);
+                    MPI_DOUBLE, my_rank+dividers[0]*dividers[1], 1, MPI_COMM_WORLD,
+                    &sen[cpt++]);
         }
         if (test_s) {
             MPI_Isend(south_s, (dim_chunk[0])*(dim_chunk[2]),
-                    MPI_DOUBLE, p-dividers[2], 2, MPI_COMM_WORLD,
-                    &sen[2]);
+                    MPI_DOUBLE, my_rank-dividers[0], 2, MPI_COMM_WORLD,
+                    &sen[cpt++]);
         } 
         if (test_n) {
             MPI_Isend(north_s, (dim_chunk[0])*(dim_chunk[2]),
-                    MPI_DOUBLE, p+dividers[2], 3, MPI_COMM_WORLD,
-                    &sen[3]);
+                    MPI_DOUBLE, my_rank+dividers[0], 3, MPI_COMM_WORLD,
+                    &sen[cpt++]);
         }
         if (test_w) {
             MPI_Isend(west_s, (dim_chunk[1])*(dim_chunk[2]),
-                    MPI_DOUBLE, p-1, 4, MPI_COMM_WORLD,
-                    &sen[4]);
+                    MPI_DOUBLE, my_rank-1, 4, MPI_COMM_WORLD,
+                    &sen[cpt++]);
         }
         if (test_e) {
             MPI_Isend(east_s, (dim_chunk[1])*(dim_chunk[2]),
-                    MPI_DOUBLE, p+1, 4, MPI_COMM_WORLD,
-                    &sen[4]);
+                    MPI_DOUBLE, my_rank+1, 5, MPI_COMM_WORLD,
+                    &sen[cpt]);
         }
         
+        fprintf(stderr, "test7\n");
+
         // int *edges = calloc(sizeof(int), 4);
         // if (edges == NULL) {
         //     perror("malloc main");
@@ -977,70 +1007,92 @@ int main(int argc, char **argv)
         
         /* compute the inside of the chunk */
         for (int k = 1; k < dim_chunk[0]-1; ++k) {
-            do_xy_plane(chunk, new_chunk, edges, n, m, o, k, dim_chunk, p, 1);
+            do_xy_plane(chunk, new_chunk, n, m, o, k, dim_chunk, my_rank, 1);
         }
+        fprintf(stderr, "test8\n");
 
         int indx;
-        fill_halo(chunk, dim_chunk, halo, -1);
 
-        for (int i = 0; i < 4; i++) {
-            MPI_Waitany(4, rec, &indx, MPI_STATUS_IGNORE);
+        for (int i = 0; i < nb_neigh; i++) {
+            fprintf(stderr, "test8 1/2\n");
+            MPI_Waitany(nb_neigh, rec, &indx, MPI_STATUS_IGNORE);
+            fprintf(stderr, "test9\n");
 
-            edges[indx] = 1;
+            // edges[indx] = 1;
 
-            switch(indx) { // A REVOIR
-                case 0 : //east
-                    fill_halo(east_r, dim_chunk, halo, 0);
-                    do_yz_plane(halo, new_chunk, edges, n, m, o, dim_chunk[0]-1, dim_chunk, p, 0);
-                    break;
+            // switch(indx) { // A REVOIR
+            //     case 0 : //east
+            //         fill_halo(east_r, dim_chunk, halo, 0);
+            //         do_yz_plane(halo, new_chunk, edges, n, m, o, dim_chunk[0]-1, dim_chunk, p, 0);
+            //         break;
 
-                case 1 : //south
-                    fill_halo(east_r, dim_chunk, halo, 0);
-                    do_xz_plane(halo, new_chunk, edges, n, m, o, 0, dim_chunk, p, 0);
-                    break;
+            //     case 1 : //south
+            //         fill_halo(east_r, dim_chunk, halo, 0);
+            //         do_xz_plane(halo, new_chunk, edges, n, m, o, 0, dim_chunk, p, 0);
+            //         break;
 
-                case 2 : //west
-                    fill_halo(east_r, dim_chunk, halo, 0);
-                    do_yz_plane(halo, new_chunk, edges, n, m, o, 0, dim_chunk, p, 0);
-                    break;
+            //     case 2 : //west
+            //         fill_halo(east_r, dim_chunk, halo, 0);
+            //         do_yz_plane(halo, new_chunk, edges, n, m, o, 0, dim_chunk, p, 0);
+            //         break;
 
-                case 3 : //north
-                    fill_halo(east_r, dim_chunk, halo, 0);
-                    do_xz_plane(halo, new_chunk, edges, n, m, o, dim_chunk[1]-1, dim_chunk, p, 0);
-                    break;
+            //     case 3 : //north
+            //         fill_halo(east_r, dim_chunk, halo, 0);
+            //         do_xz_plane(halo, new_chunk, edges, n, m, o, dim_chunk[1]-1, dim_chunk, p, 0);
+            //         break;
                     
-                default :
-                    return EXIT_FAILURE;
-            }
+            //     default :
+            //         return EXIT_FAILURE;
+            // }
         }
+        fprintf(stderr, "test10\n");
 
-            /* each second, we test the convergence, and print a short progress report */
+        do_halo(chunk, new_chunk, front_r, back_r, south_r, north_r, west_r, east_r, n, m, o, dim_chunk, my_rank);
+        fprintf(stderr, "test11\n");
+
+        /* each second, we test the convergence, and print a short progress report */
         //test it locally, and sum all the partial values with MPI_allReduceand MPI_SUM
         //Be careful : the sqrt has to be done on the total sum 
+
+        //each processor compute the sum
         if (n_steps % ((int)(1 / dt)) == 0) {
             double delta_T = 0;
             double max = -INFINITY;
 
-            for (int u = 0; u < n * m * o; u++) {
-                delta_T += (R[u] - T[u]) * (R[u] - T[u]);
-                if (R[u] > max)
-                    max = R[u];
+            for (int u = 0; u < dim_chunk[0]*dim_chunk[1]*dim_chunk[2]; u++) {
+                delta_T += (new_chunk[u] - chunk[u]) * (new_chunk[u] - chunk[u]);
+                if (new_chunk[u] > max)
+                    max = new_chunk[u];
             }
 
-            delta_T = sqrt(delta_T) / dt;
-            fprintf(stderr, "t = %.1fs ; T_max = %.1f°C ; convergence = %g\n", t, max - 273.15, delta_T);
-            
-            if (delta_T < 0.1)
-                convergence = 1;
+            /*send all sums to 0*/
+            double sum = 0;
+            MPI_Reduce(&delta_T, &sum, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+
+            //only 0
+            if (my_rank == 0) {
+
+                delta_T = sqrt(sum) / dt;
+                fprintf(stderr, "t = %.1fs ; T_max = %.1f°C ; convergence = %g\n", t, max - 273.15, delta_T);
+                
+                if (delta_T < 0.1)
+                    convergence = 1;
+            }
 	    }
 
         /* the new temperatures are in R */
-        double *tmp = R;
-        R = T;
-        T = tmp;
+        double *tmp = new_chunk;
+        new_chunk = chunk;
+        chunk = tmp;
 
         t += dt;
         n_steps += 1;
+    }
+
+    double *T = malloc(n*m*o*sizeof(double));
+    if (T == NULL) {
+        perror("main: malloc T");
+        return EXIT_FAILURE;
     }
 
 #ifdef DUMP_STEADY_STATE

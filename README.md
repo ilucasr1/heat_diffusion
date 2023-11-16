@@ -6,10 +6,7 @@ AMELIORATIONS :
 on attend de tout recevoir pour traiter.
 essayer de traiter des qu'on recoit
 
-2) 
+2) tout reecrire dans un unique tableau T au lieu de contenir dans T et reorganiser dans R (pour le gather)
 
 
 REPRENDRE : 
-on s'est arrete a do_hallo, on allait faire le update_temp
-
-changer update temperature en envoyant les valurs autour de la cel a calculer en indice
