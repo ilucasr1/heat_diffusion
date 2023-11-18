@@ -86,6 +86,9 @@ const double Stefan_Boltzmann = 5.6703e-8;  /* (W / m^2 / K^4), radiation of bla
 const double heat_transfer_coefficient = 10;    /* coefficient of thermal convection (W / m^2 / K) */
 double CPU_surface;
 
+int r = 0; // pour des test
+
+
 /* 
  * Return True if the CPU is in contact with the heatsink at the point (x,y).
  * This describes an AMD EPYC "Rome".
@@ -119,6 +122,9 @@ static inline double update_temperature(const double c, const double f, const do
                                         int n, int m, int o, int i, int j, int k)
 {
 		/* quantity of thermal energy that must be brought to a cell to make it heat up by 1°C */
+    if (k == 10 && j == 0 && i == 16) {
+        fprintf(stderr, "my_rank %d c %f f %f b %f s %f n %f w %f e %f\n", r, c, f, b, s, no, w, e);
+    }
     const double cell_heat_capacity = sink_heat_capacity * sink_density * dl * dl * dl; /* J.K */
     const double dl2 = dl * dl;
     double thermal_flux = 0;
@@ -177,11 +183,11 @@ static inline double update_temperature(const double c, const double f, const do
 /* Run the simulation on the k-th xy plane.
  * v is the index of the start of the k-th xy plane in the arrays T and R. */
 static inline void do_xy_plane(const double *T, double *R, 
-                               int n, int m, int o, int k, int *dim_chunk, int p, int inside)
+                               int n, int m, int o, int k, int *dim_chunk, int my_rank, int inside)
 {
-    int T_i = (p*dim_chunk[0])%n;
-    int T_j = ((p*dim_chunk[0]/n)*dim_chunk[1])%m;
-    int T_k = ( ( (p*dim_chunk[0]/n)*dim_chunk[1] )/m )*dim_chunk[2] + k;
+    int T_i = (my_rank*dim_chunk[0])%n;
+    int T_j = ((my_rank*dim_chunk[0]/n)*dim_chunk[1])%m;
+    int T_k = ( ( (my_rank*dim_chunk[0]/n)*dim_chunk[1] )/m )*dim_chunk[2] + k;
 
     if (T_k == 0) // we do not modify the z = 0 plane: it is maintained at constant temperature via water-cooling
         return;
@@ -246,19 +252,20 @@ static inline void do_xy_plane(const double *T, double *R,
 
 static inline void do_halo(const double *T, double *R,  double *front_r, double *back_r, 
                             double *south_r, double *north_r, double *west_r, double *east_r, 
-                            int n, int m, int o, int *dim_chunk, int p) {
+                            int n, int m, int o, int *dim_chunk, int my_rank) {
 /**
  * @param T chunk at time t
  * @param R chunk at time t+1
  * @param n dim of the whole data on x
  * @param m dim of the whole data on y
  * @param o dim of the whole data on z
- * @param p current processor's rank
+ * @param my_rank current processor's rank
  */
 
-    int T_i = (p*dim_chunk[0])%n;
-    int T_j = ((p*dim_chunk[0]/n)*dim_chunk[1])%m;
-    int T_k = ( ( (p*dim_chunk[0]/n)*dim_chunk[1] )/m )*dim_chunk[2];
+    int T_i = (my_rank*dim_chunk[0])%n;
+    int T_j = ((my_rank*dim_chunk[0]/n)*dim_chunk[1])%m;
+    int T_k = ( ( (my_rank*dim_chunk[0]/n)*dim_chunk[1] )/m )*dim_chunk[2];
+
     int u;
     double f;
     double b;
@@ -269,26 +276,27 @@ static inline void do_halo(const double *T, double *R,  double *front_r, double 
 
     // FACE FRONT
     // 3 cas : centre / arete / coins
-
     // cas centre :
+    if (T_k == 0) goto end_front;
+
     for (int j = 1; j < dim_chunk[1] - 1; ++j) {
         for (int i = 1; i < dim_chunk[0] - 1; ++i) {
             u = j*dim_chunk[0] + i;
             f = (front_r == NULL) ? 0 : front_r[u];
             R[u] = update_temperature(T[u], f, T[u + dim_chunk[0]*dim_chunk[1]], T[u - dim_chunk[0]],
-                                      T[u + dim_chunk[0]], T[u - 1], T[u + 1], n, m, o, T_i + i, T_j + j, T_k);
+            T[u + dim_chunk[0]], T[u - 1], T[u + 1], n, m, o, T_i + i, T_j + j, T_k);
         }
     }
 
     // cas aretes :
     // arete bas et haut
-    for (int i = 0; i < dim_chunk[0]; ++i) {
+    for (int i = 1; i < dim_chunk[0]-1; ++i) {
 
         //j = 0
         u = i;
         f = (front_r == NULL) ? 0 : front_r[u];
         s = (south_r == NULL) ? 0 : south_r[i];
-        
+
         R[u] = update_temperature(T[u], f, T[u + dim_chunk[0]*dim_chunk[1]], s,
                                   T[u + dim_chunk[0]], T[u - 1], T[u + 1], n, m, o, T_i + i, T_j, T_k);
                                     
@@ -302,7 +310,7 @@ static inline void do_halo(const double *T, double *R,  double *front_r, double 
     }
     
     //arete gauche et droite
-    for (int j = 0; j < dim_chunk[1]; ++j) {
+    for (int j = 1; j < dim_chunk[1]-1; ++j) {
 
         //i = 0
         u = j*dim_chunk[0];
@@ -338,7 +346,7 @@ static inline void do_halo(const double *T, double *R,  double *front_r, double 
     s = (south_r == NULL) ? 0 : south_r[dim_chunk[0] - 1];
     e = (east_r == NULL)  ? 0 : east_r[0];
 
-    R[u] = update_temperature(T[u], front_r[u], T[u + dim_chunk[0]*dim_chunk[1]], s,
+    R[u] = update_temperature(T[u], f, T[u + dim_chunk[0]*dim_chunk[1]], s,
                               T[u + dim_chunk[0]], T[u - 1], e, n, m, o, T_i + dim_chunk[0] - 1, T_j, T_k);
 
     //coin haut gauche
@@ -356,9 +364,10 @@ static inline void do_halo(const double *T, double *R,  double *front_r, double 
     no = (north_r == NULL) ? 0 : north_r[dim_chunk[0] - 1];
     e  = (east_r == NULL)  ? 0 : east_r[dim_chunk[1] - 1];
     
-    R[u] = update_temperature(T[u], front_r[u], T[u + dim_chunk[0]*dim_chunk[1]], T[u - dim_chunk[0]],
+    R[u] = update_temperature(T[u], f, T[u + dim_chunk[0]*dim_chunk[1]], T[u - dim_chunk[0]],
                               no, T[u - 1], e, n, m, o, T_i + dim_chunk[0] - 1, T_j + dim_chunk[1] - 1, T_k);
 
+    end_front:
 
 
     // FACE BACK
@@ -377,7 +386,7 @@ static inline void do_halo(const double *T, double *R,  double *front_r, double 
 
     // cas aretes :
     // arete bas et haut
-    for (int i = 0; i < dim_chunk[0]; ++i) {
+    for (int i = 1; i < dim_chunk[0]-1; ++i) {
         //j = 0
         u = (dim_chunk[2]-1)*dim_chunk[1]*dim_chunk[0] + i;
         b = (back_r == NULL)  ? 0 : back_r[i];
@@ -396,7 +405,7 @@ static inline void do_halo(const double *T, double *R,  double *front_r, double 
     }
     
     //arete gauche et droite
-    for (int j = 0; j < dim_chunk[1]; ++j) {
+    for (int j = 1; j < dim_chunk[1]-1; ++j) {
         //i = 0
         u = (dim_chunk[2]-1)*dim_chunk[1]*dim_chunk[0] + j*dim_chunk[0];
         b = (back_r == NULL) ? 0 : back_r[j*dim_chunk[0]];
@@ -453,6 +462,41 @@ static inline void do_halo(const double *T, double *R,  double *front_r, double 
                                 no, T[u - 1], e, n, m, o, T_i + dim_chunk[0] - 1, T_j + dim_chunk[1] - 1, T_k + dim_chunk[2]-1);
 
     
+    // FACE SOUTH
+    // 2 cas : centre / arete
+
+    // cas centre :
+    for (int k = 1; k < dim_chunk[2] - 1; ++k) {
+        for (int i = 1; i < dim_chunk[0] - 1; ++i) {
+            u = k*dim_chunk[1]*dim_chunk[0] + i;
+            s = (south_r == NULL) ? 0 : south_r[k*dim_chunk[0] + i];
+            
+            R[u] = update_temperature(T[u], T[u - dim_chunk[0]*dim_chunk[1]], T[u + dim_chunk[0]*dim_chunk[1]], s,
+                                      T[u + dim_chunk[0]], T[u - 1], T[u + 1], n, m, o, T_i + i, T_j, T_k + k);
+        }
+    }
+    
+    //arete bas-gauche et bas-droite
+    for (int k = 1; k < dim_chunk[2] - 1; ++k) {
+        //i = 0
+        u = k*dim_chunk[1]*dim_chunk[0];
+        s = (south_r == NULL) ? 0 : south_r[k*dim_chunk[0]];
+        w = (west_r == NULL)  ? 0 : west_r[k*dim_chunk[1] + dim_chunk[1] - 1];
+        
+        R[u] = update_temperature(T[u], T[u - dim_chunk[0]*dim_chunk[1]], T[u + dim_chunk[0]*dim_chunk[1]], s,
+                                  T[u + dim_chunk[0]], w, T[u + 1], n, m, o, T_i, T_j, T_k + k);
+
+        //i = dim_chunk[0]-1
+        u = k*dim_chunk[1]*dim_chunk[0] + dim_chunk[0] - 1;
+        s = (south_r == NULL) ? 0 : south_r[k*dim_chunk[0] + dim_chunk[0] - 1];
+        e =  (east_r == NULL)  ? 0 : east_r[k*dim_chunk[1] + dim_chunk[1] - 1];
+
+        R[u] = update_temperature(T[u], T[u - dim_chunk[0]*dim_chunk[1]], T[u + dim_chunk[0]*dim_chunk[1]], s,
+                                   T[u + dim_chunk[0]], T[u - 1], e, n, m, o, T_i + dim_chunk[0] - 1, T_j, T_k + k);
+    
+    }
+    
+
     // FACE NORTH
     // 2 cas : centre / arete
 
@@ -662,6 +706,8 @@ int main(int argc, char **argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
     MPI_Comm_size(MPI_COMM_WORLD, &p);
 
+    r = my_rank; // pour le test
+
     CPU_surface = CPU_contact_surface();
     double V = L * l * E;
     int n = ceil(L / dl);
@@ -680,6 +726,10 @@ int main(int argc, char **argv)
     dim_chunk[0] = n/dividers[0];
     dim_chunk[1] = m/dividers[1];
     dim_chunk[2] = o/dividers[2];
+    fprintf(stderr, "n %d, dim_chunk[0] %d\n", n, dim_chunk[0]);
+    fprintf(stderr, "m %d, dim_chunk[1] %d\n", m, dim_chunk[1]);
+    fprintf(stderr, "o %d, dim_chunk[2] %d\n", o, dim_chunk[2]);
+
     fprintf(stderr, "dimchunk : %d %d %d\n",dim_chunk[0], dim_chunk[1], dim_chunk[2]);
     
     fprintf(stderr, "HEATSINK\n");
@@ -705,24 +755,22 @@ int main(int argc, char **argv)
     */
 
     int size_chunk = dim_chunk[0]*dim_chunk[1]*dim_chunk[2];
-    double *chunk;   // chunk(i,j,k) = chunk[i + j*chunk0 + k*chunk0*chunk1]
-    double *new_chunk;
+    double *chunk = NULL;   // chunk(i,j,k) = chunk[i + j*chunk0 + k*chunk0*chunk1]
+    double *new_chunk = NULL;
 
-    double *front_r; // id = 0 // front(i,j) = front[j*chunk0 + i]
-    double *back_r;  // id = 1 // back(i,j)  = back[j*chunk0 + i]
-    double *south_r; // id = 2 // south(i,k) = south[k*chunk0 + i] = chunk(i,-1,k)
-    double *north_r; // id = 3 // north(i,k) = north[k*chunk0 + i] = chunk(i,dim_chunk1,k)
-    double *west_r;  // id = 4 // west(j,k)  = west[k*chunk1 + j]  = chunk(-1,j,k)
-    double *east_r;  // id = 5 // east(j,k)  = east[k*chunk1 + j]  = chunk(dim_chunk0,j,k)
+    double *front_r = NULL; // id = 0 // front(i,j) = front[j*chunk0 + i]
+    double *back_r = NULL;  // id = 1 // back(i,j)  = back[j*chunk0 + i]
+    double *south_r = NULL; // id = 2 // south(i,k) = south[k*chunk0 + i] = chunk(i,-1,k)
+    double *north_r = NULL; // id = 3 // north(i,k) = north[k*chunk0 + i] = chunk(i,dim_chunk1,k)
+    double *west_r = NULL;  // id = 4 // west(j,k)  = west[k*chunk1 + j]  = chunk(-1,j,k)
+    double *east_r = NULL;  // id = 5 // east(j,k)  = east[k*chunk1 + j]  = chunk(dim_chunk0,j,k)
 
-    double *front_s; // front(i,j) = front[j*chunk0 + i]
-    double *back_s;  // back(i,j)  = back[j*chunk0 + i]
-    double *south_s; // south(i,k) = south[k*chunk0 + i] = chunk(i,0,k)
-    double *north_s; // north(i,k) = north[k*chunk0 + i] = chunk(i,0,k)
-    double *west_s;  // west(j,k)  = west[k*chunk1 + j]  = chunk(0,j,k)    
-    double *east_s;  // east(j,k)  = east[k*chunk1 + j]  = chunk(0,j,k)
-
-    fprintf(stderr, "test1\n");
+    double *front_s = NULL; // front(i,j) = front[j*chunk0 + i]
+    double *back_s = NULL;  // back(i,j)  = back[j*chunk0 + i]
+    double *south_s = NULL; // south(i,k) = south[k*chunk0 + i] = chunk(i,0,k)
+    double *north_s = NULL; // north(i,k) = north[k*chunk0 + i] = chunk(i,0,k)
+    double *west_s = NULL;  // west(j,k)  = west[k*chunk1 + j]  = chunk(0,j,k)    
+    double *east_s = NULL;  // east(j,k)  = east[k*chunk1 + j]  = chunk(0,j,k)
 
     chunk = malloc(size_chunk*sizeof(double));
     if (chunk == NULL){
@@ -756,6 +804,7 @@ int main(int argc, char **argv)
             perror("malloc_blocs : malloc");
             exit(1);
         }
+
     }
 
     if (dividers[1] > 1) {
@@ -803,8 +852,7 @@ int main(int argc, char **argv)
             exit(1);
         }
     }
-    
-    fprintf(stderr, "test2\n");
+
 
     /* initially the heatsink is at the temperature of the water-cooling fluid */
     for (int u = 0; u < size_chunk; u++)
@@ -815,11 +863,9 @@ int main(int argc, char **argv)
     int n_steps = 0;
     int convergence = 0;
 
-    fprintf(stderr, "test3\n");
 
     /* simulating time steps */
-    while (convergence == 0) {
-        fprintf(stderr, "test4\n");
+    while (convergence == 0 && n_steps <= 0) {
         /* Update all cells. xy planes are processed, for increasing values of z. */
 	/* Ask for all the Irecv (check the border conditions)
 	 * prepare the data and Isend them
@@ -852,50 +898,49 @@ int main(int argc, char **argv)
         int nb_neigh = test_f + test_b + test_s + test_n + test_w + test_e;
         int cpt = 0;
         
-        MPI_Request rec[nb_neigh];
+        MPI_Request *rec = calloc(nb_neigh, sizeof(MPI_Request));
         if (test_f) {
-            printf("0\n");
+            // printf("0\n");
             MPI_Irecv(front_r, (dim_chunk[0])*(dim_chunk[1]),
                     MPI_DOUBLE, my_rank-dividers[0]*dividers[1], 0, MPI_COMM_WORLD,
                     &rec[cpt++]);
         }
         if (test_b) {
-            printf("1\n");
+            // printf("1\n");
             MPI_Irecv(back_r, (dim_chunk[0])*(dim_chunk[1]),
-                    MPI_DOUBLE, my_rank+dividers[0]*dividers[1], 1, MPI_COMM_WORLD,
+                    MPI_DOUBLE, my_rank+dividers[0]*dividers[1], 0, MPI_COMM_WORLD,
                     &rec[cpt++]);
         }
         if (test_s) {
-            printf("2\n");
+            // printf("2\n");
             MPI_Irecv(south_r, (dim_chunk[0])*(dim_chunk[2]),
-                    MPI_DOUBLE, my_rank-dividers[0], 2, MPI_COMM_WORLD,
+                    MPI_DOUBLE, my_rank-dividers[0], 0, MPI_COMM_WORLD,
                     &rec[cpt++]);
         } 
         if (test_n) {
-            printf("3\n");
+            // printf("3\n");
             MPI_Irecv(north_r, (dim_chunk[0])*(dim_chunk[2]),
-                    MPI_DOUBLE, my_rank+dividers[0], 3, MPI_COMM_WORLD,
+                    MPI_DOUBLE, my_rank+dividers[0], 0, MPI_COMM_WORLD,
                     &rec[cpt++]);
         }
         if (test_w) {
-            printf("4\n");
+            // printf("4\n");
             MPI_Irecv(west_r, (dim_chunk[1])*(dim_chunk[2]),
-                    MPI_DOUBLE, my_rank-1, 4, MPI_COMM_WORLD,
+                    MPI_DOUBLE, my_rank-1, 0, MPI_COMM_WORLD,
                     &rec[cpt++]);
         }
         if (test_e) {
-            printf("5\n");
+            // printf("5\n");
             MPI_Irecv(east_r, (dim_chunk[1])*(dim_chunk[2]),
-                    MPI_DOUBLE, my_rank+1, 5, MPI_COMM_WORLD,
+                    MPI_DOUBLE, my_rank+1, 0, MPI_COMM_WORLD,
                     &rec[cpt]);
         }
 
-        fprintf(stderr, "test5\n");
 
         /* create the sides for neighbours */
         if (test_f && test_b) {
             for (int i = 0; i < dim_chunk[0]; ++i) {
-                for (int j = 0; j < dim_chunk[2]; ++j) { /* (x,y) pour les faces front back*/
+                for (int j = 0; j < dim_chunk[1]; ++j) { /* (x,y) pour les faces front back*/
                     front_s[j*dim_chunk[0] + i] = chunk[j*dim_chunk[0] + i];
                     back_s[j*dim_chunk[0] + i]  = chunk[j*dim_chunk[0] + i + dim_chunk[0]*dim_chunk[1]*(dim_chunk[2]-1)];
                 }
@@ -903,14 +948,14 @@ int main(int argc, char **argv)
         }
         else if (test_f) {
             for (int i = 0; i < dim_chunk[0]; ++i) {
-                for (int j = 0; j < dim_chunk[2]; ++j) { /* (x,y) pour les faces front back*/
+                for (int j = 0; j < dim_chunk[1]; ++j) { /* (x,y) pour les faces front back*/
                     front_s[j*dim_chunk[0] + i] = chunk[j*dim_chunk[0] + i];
                 }
             }
         }
         else if (test_b) {
             for (int i = 0; i < dim_chunk[0]; ++i) {
-                for (int j = 0; j < dim_chunk[2]; ++j) { /* (x,y) pour les faces front back*/
+                for (int j = 0; j < dim_chunk[1]; ++j) { /* (x,y) pour les faces front back*/
                     back_s[j*dim_chunk[0] + i] = chunk[j*dim_chunk[0] + i + dim_chunk[0]*dim_chunk[1]*(dim_chunk[2]-1)];
                 }
             }
@@ -961,43 +1006,42 @@ int main(int argc, char **argv)
                 }
             } 
         }
-        fprintf(stderr, "test6\n");
+
         
         cpt = 0;
         /* sends the sides to neighbours */
-        MPI_Request sen[nb_neigh];
+        MPI_Request *sen = calloc(nb_neigh, sizeof(MPI_Request));
         if (test_f) {
-            MPI_Isend(front_r, (dim_chunk[0])*(dim_chunk[1]),
+            MPI_Isend(front_s, (dim_chunk[0])*(dim_chunk[1]),
                     MPI_DOUBLE, my_rank-dividers[0]*dividers[1], 0, MPI_COMM_WORLD,
                     &sen[cpt++]);
         }
         if (test_b) {
-            MPI_Isend(back_r, (dim_chunk[0])*(dim_chunk[1]),
-                    MPI_DOUBLE, my_rank+dividers[0]*dividers[1], 1, MPI_COMM_WORLD,
+            MPI_Isend(back_s, (dim_chunk[0])*(dim_chunk[1]),
+                    MPI_DOUBLE, my_rank+dividers[0]*dividers[1], 0, MPI_COMM_WORLD,
                     &sen[cpt++]);
         }
         if (test_s) {
             MPI_Isend(south_s, (dim_chunk[0])*(dim_chunk[2]),
-                    MPI_DOUBLE, my_rank-dividers[0], 2, MPI_COMM_WORLD,
+                    MPI_DOUBLE, my_rank-dividers[0], 0, MPI_COMM_WORLD,
                     &sen[cpt++]);
         } 
         if (test_n) {
             MPI_Isend(north_s, (dim_chunk[0])*(dim_chunk[2]),
-                    MPI_DOUBLE, my_rank+dividers[0], 3, MPI_COMM_WORLD,
+                    MPI_DOUBLE, my_rank+dividers[0], 0, MPI_COMM_WORLD,
                     &sen[cpt++]);
         }
         if (test_w) {
             MPI_Isend(west_s, (dim_chunk[1])*(dim_chunk[2]),
-                    MPI_DOUBLE, my_rank-1, 4, MPI_COMM_WORLD,
+                    MPI_DOUBLE, my_rank-1, 0, MPI_COMM_WORLD,
                     &sen[cpt++]);
         }
         if (test_e) {
             MPI_Isend(east_s, (dim_chunk[1])*(dim_chunk[2]),
-                    MPI_DOUBLE, my_rank+1, 5, MPI_COMM_WORLD,
+                    MPI_DOUBLE, my_rank+1, 0, MPI_COMM_WORLD,
                     &sen[cpt]);
         }
         
-        fprintf(stderr, "test7\n");
 
         // int *edges = calloc(sizeof(int), 4);
         // if (edges == NULL) {
@@ -1009,14 +1053,14 @@ int main(int argc, char **argv)
         for (int k = 1; k < dim_chunk[0]-1; ++k) {
             do_xy_plane(chunk, new_chunk, n, m, o, k, dim_chunk, my_rank, 1);
         }
-        fprintf(stderr, "test8\n");
 
+        // MPI_Barrier(MPI_COMM_WORLD);
         int indx;
 
-        for (int i = 0; i < nb_neigh; i++) {
-            fprintf(stderr, "test8 1/2\n");
-            MPI_Waitany(nb_neigh, rec, &indx, MPI_STATUS_IGNORE);
-            fprintf(stderr, "test9\n");
+        for (int i = 0; i < nb_neigh; ++i) {
+            MPI_Waitany(nb_neigh, rec, &indx, MPI_STATUSES_IGNORE);
+            // fprintf(stderr, "test13 1/2\n");
+
 
             // edges[indx] = 1;
 
@@ -1045,10 +1089,24 @@ int main(int argc, char **argv)
             //         return EXIT_FAILURE;
             // }
         }
-        fprintf(stderr, "test10\n");
+        // if (test_n) {
+        //     for (int i = 0; i < dim_chunk[0]; ++i) {
+        //         for (int k = 0; k < dim_chunk[2]; ++k) {
+        //             fprintf(stderr, "north i %d k %d | val = %f\n", i, k, north_r[k*dim_chunk[0] + i]-273.15);
+        //         }
+        //     }
+        // }
+        // if (test_s) {
+        //     for (int i = 0; i < dim_chunk[0]; ++i) {
+        //         for (int k = 0; k < dim_chunk[2]; ++k) {
+        //             fprintf(stderr, "south i %d k %d | val = %f\n", i, k, south_r[k*dim_chunk[0] + i]-273.15);
+        //         }
+        //     }
+        // }
+        // fprintf(stderr, "test14\n");
 
         do_halo(chunk, new_chunk, front_r, back_r, south_r, north_r, west_r, east_r, n, m, o, dim_chunk, my_rank);
-        fprintf(stderr, "test11\n");
+        // fprintf(stderr, "test15\n");
 
         /* each second, we test the convergence, and print a short progress report */
         //test it locally, and sum all the partial values with MPI_allReduceand MPI_SUM
@@ -1060,6 +1118,8 @@ int main(int argc, char **argv)
             double max = -INFINITY;
 
             for (int u = 0; u < dim_chunk[0]*dim_chunk[1]*dim_chunk[2]; u++) {
+                // if (new_chunk[u] < chunk[u])
+                // {fprintf(stderr,"new_c %f c %f \n", new_chunk[u], chunk[u]);}
                 delta_T += (new_chunk[u] - chunk[u]) * (new_chunk[u] - chunk[u]);
                 if (new_chunk[u] > max)
                     max = new_chunk[u];
@@ -1067,50 +1127,103 @@ int main(int argc, char **argv)
 
             /*send all sums to 0*/
             double sum = 0;
+            double max_all = 0;
             MPI_Reduce(&delta_T, &sum, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+            MPI_Reduce(&max, &max_all, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+
 
             //only 0
             if (my_rank == 0) {
 
                 delta_T = sqrt(sum) / dt;
-                fprintf(stderr, "t = %.1fs ; T_max = %.1f°C ; convergence = %g\n", t, max - 273.15, delta_T);
+                fprintf(stderr, "t = %.1fs ; T_max = %.1f°C ; convergence = %g\n", t, max_all - 273.15, delta_T);
                 
-                if (delta_T < 0.1)
+                if (delta_T < 0.1) {
                     convergence = 1;
+                }
+                
+
             }
+            MPI_Bcast(&convergence, 1, MPI_INT, 0, MPI_COMM_WORLD);
 	    }
 
         /* the new temperatures are in R */
         double *tmp = new_chunk;
-        new_chunk = chunk;
+        new_chunk = chunk; 
         chunk = tmp;
 
         t += dt;
         n_steps += 1;
-    }
 
-    double *T = malloc(n*m*o*sizeof(double));
-    if (T == NULL) {
-        perror("main: malloc T");
-        return EXIT_FAILURE;
+        free(rec);
+        free(sen);
     }
-
-#ifdef DUMP_STEADY_STATE
-    printf("###### STEADY STATE; t = %.1f\n", t);
-    for (int k = 0; k < o; k++) {   // z
-        printf("# z = %g\n", k * dl);
-        for (int j = 0; j < m; j++) {   // y
-            for (int i = 0; i < n; i++) {   // x
-                printf("%.1f ", T[k * n * m + j * n + i] - 273.15);
-            }
-            printf("\n");
+    fprintf(stderr, "fin while %d\n", my_rank);
+    
+    double *T = NULL;
+    if (my_rank == 0) {
+        T = malloc(n*m*o*sizeof(double));
+        if (T == NULL) {
+            perror("main: malloc T");
+            return EXIT_FAILURE;
         }
     }
-    printf("\n");
-    fprintf(stderr, "For graphical rendering: python3 rendu_picture_steady.py [filename.txt] %d %d %d\n", n, m, o);
-#endif
     
+    // fprintf(stderr, "n1 %d, n2 %d, n3 %d\n", dim_chunk[0]*p,dim_chunk[1]*p,dim_chunk[2]*p);
+    fprintf(stderr, "gather %d\n", my_rank);
+    MPI_Gather(chunk, dim_chunk[0]*dim_chunk[1]*dim_chunk[2],MPI_DOUBLE, T,
+                dim_chunk[0]*dim_chunk[1]*dim_chunk[2], MPI_DOUBLE, 0, 
+                MPI_COMM_WORLD);
+
+
+if (my_rank == 0) {
+    #ifdef DUMP_STEADY_STATE
+    fprintf(stderr,"###### STEADY STATE; t = %.1f\n", t);
+    for (int k = 0; k < o; ++k) {   // z
+        fprintf(stderr, "# z = %g\n", k * dl);
+        for (int j = 0; j < m; ++j) {   // y
+            for (int i = 0; i < n; ++i) {   // x
+                
+                fprintf(stderr,"%.1f ", T[k * n * m + j * n + i] - 273.15);
+            }
+            fprintf(stderr,"\n");
+        }
+    }
+
+    // for (int k = 0; k < dim_chunk[2]; ++k) {   // z
+    //     fprintf(stderr, "# z = %g\n", k * dl);
+    //     for (int j = 0; j < dim_chunk[1]; ++j) {   // y
+    //         for (int i = 0; i < dim_chunk[0]; ++i) {   // x
+    //             fprintf(stderr, "%.1f ", chunk[k*dim_chunk[0]*dim_chunk[1] + j*dim_chunk[0] + i] - 273.15);
+                
+    //         }
+    //         fprintf(stderr,"\n");
+    //     }
+    // }
+    fprintf(stderr,"\n");
+    fprintf(stderr, "For graphical rendering: python3 rendu_picture_steady.py [filename.txt] %d %d %d\n", n, m, o);
+    #endif
+}
     MPI_Finalize();
+
+
+    free(chunk);
+    free(new_chunk);
+    free(dim_chunk);
+    free(dividers);
+    // free(T);
+    free(front_r);
+    free(back_r);
+    free(south_r);
+    free(north_r);
+    free(west_r);
+    free(east_r);
+    free(front_s);
+    free(back_s);
+    free(south_s);
+    free(north_s);
+    free(west_s);
+    free(east_s);
 
     exit(EXIT_SUCCESS);
 }

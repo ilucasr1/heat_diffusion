@@ -100,6 +100,8 @@ int main() {
     }
     printf("\n");
     */
+
+    /*
     n = 168;
     
     int i = floor(cbrt(n));
@@ -120,6 +122,17 @@ int main() {
     printf(" k = %d ",k);
     printf("j= %d ",j);
     printf("i=%d\n ",i);
+    */
+
+
+
+    // TEST DATA
+    FILE* f_test = fopen("data_test.txt", "r");
+    FILE* f = fopen("data.txt", "r");
+
+    while (getline(f_test) && getline(f)) {
+        strcmp();
+    }
 
     return 0;
 }
