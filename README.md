@@ -10,3 +10,7 @@ essayer de traiter des qu'on recoit
 
 
 REPRENDRE : 
+
+1) Il faut modifier le remplissage de chunk pour les gather (cas dim >= 2) en reorganisant
+
+puis faire de meme pour dim >= 1

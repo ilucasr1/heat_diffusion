@@ -125,14 +125,10 @@ int main() {
     */
 
 
-
-    // TEST DATA
-    FILE* f_test = fopen("data_test.txt", "r");
-    FILE* f = fopen("data.txt", "r");
-
-    while (getline(f_test) && getline(f)) {
-        strcmp();
-    }
+    int *tab = malloc(sizeof(int)*10);
+    free(tab);
+    free(tab);
+    
 
     return 0;
 }
