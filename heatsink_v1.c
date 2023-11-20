@@ -1265,9 +1265,10 @@ int main(int argc, char **argv)
                 return EXIT_FAILURE;
             }
         }
-
+	      // fprintf(stderr, "entry gather dim 3 my_rank %d \n", my_rank);
         MPI_Gather(chunk, size_chunk, MPI_DOUBLE, row_gather,
                    size_chunk, MPI_DOUBLE, 0, row_comm);
+	      // fprintf(stderr, "exit gather dim 3 my_rank %d \n", my_rank);
         free(chunk);
         chunk = NULL;
 
@@ -1312,14 +1313,14 @@ int main(int argc, char **argv)
             }
         }
 
-        // fprintf(stderr, "entry gather my_rank %d color %d key %d\n", my_rank, color, key);
+        // fprintf(stderr, "entry gather dim 2 my_rank %d color %d key %d\n", my_rank, color, key);
         if (my_rank%dividers[0] == 0) {
-            // fprintf(stderr, "inside gather my_rank %d\n", my_rank);
+            // fprintf(stderr, "inside gather dim 2 my_rank %d\n", my_rank);
 
             MPI_Gather(chunk, size_chunk, MPI_DOUBLE, col_gather,
                        size_chunk, MPI_DOUBLE, 0, col_comm);
         }
-        // fprintf(stderr, "exit gather my_rank %d\n", my_rank);
+        // fprintf(stderr, "exit gather dim2 my_rank %d\n", my_rank);
 
         
         free(chunk);
@@ -1362,19 +1363,19 @@ int main(int argc, char **argv)
     }
     
     MPI_Comm final_comm;
-    MPI_Comm_split(MPI_COMM_WORLD, (my_rank/dividers[0])%(dividers[1]), 
+    MPI_Comm_split(MPI_COMM_WORLD, (my_rank%(dividers[0]*dividers[1])), 
             my_rank/(dividers[0]*dividers[1]), &final_comm);
         
 
-    // fprintf(stderr, "n1 %d, n2 %d, n3 %d\n", dim_chunk[0]*p,dim_chunk[1]*p,dim_chunk[2]*p);
+     //fprintf(stderr, "n1 %d, n2 %d, n3 %d\n", dim_chunk[0]*p,dim_chunk[1]*p,dim_chunk[2]*p);
     // fprintf(stderr, "entry gather %d\n", my_rank);
     if (my_rank%(dividers[0]*dividers[1]) == 0) {
-        // fprintf(stderr, "inside gather my_rank %d\n", my_rank);
+        //  fprintf(stderr, "inside gather my_rank %d\n", my_rank);
         MPI_Gather(chunk, size_chunk, MPI_DOUBLE, T,
                     size_chunk, MPI_DOUBLE, 0, 
                     final_comm);
     }
-    // fprintf(stderr, "exit gather %d\n", my_rank);
+    //  fprintf(stderr, "exit gather %d\n", my_rank);
 
 
     if (my_rank == 0) {
@@ -1406,7 +1407,7 @@ int main(int argc, char **argv)
         #endif
     }
 
-    // fprintf(stderr, "end prog %d\n", my_rank);
+     fprintf(stderr, "end prog %d\n", my_rank);
 
     MPI_Finalize();
 
