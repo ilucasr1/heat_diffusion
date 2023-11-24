@@ -120,7 +120,10 @@ double CPU_contact_surface()
  * cells (left, right, top, bottom, front, back), except if (i, j, k) is on the external surface. */
 static inline double update_temperature(const double *T, int u, int n, int m, int o, int i, int j, int k)
 {
-	
+	// if (k == 28 && j == 1 && i == 1) {
+    //     fprintf(stderr, "u+nm %d c %f f %f b %f s %f n %f w %f e %f\n", 
+    //                     n*m*o, T[u], T[u-n*m], T[u+n*m], T[u-n], T[u+n], T[u-1], T[u+1]);
+    // }
     if (i == 0) {
         sum_i++;
     }
@@ -257,6 +260,9 @@ int main()
                 if (R[u] > max)
                     max = R[u];
             }
+
+            //fprintf(stderr, "chunk[u] %f\n", T[2129]);
+            
             delta_T = sqrt(delta_T) / dt;
             fprintf(stderr, "t = %.1fs ; T_max = %.1f°C ; convergence = %g\n", t, max - 273.15, delta_T);
             if (delta_T < 0.1)
@@ -275,14 +281,15 @@ int main()
     fprintf(stderr, "sums i j k %f %f %f\n", sum_i, sum_j, sum_k);
 
 #ifdef DUMP_STEADY_STATE
+    FILE *f = fopen("data.txt", "w");
     printf("###### STEADY STATE; t = %.1f\n", t);
     for (int k = 0; k < o; k++) {   // z
-        printf("# z = %g\n", k * dl);
+        fprintf(f, "# z = %g\n", k * dl);
         for (int j = 0; j < m; j++) {   // y
             for (int i = 0; i < n; i++) {   // x
-                printf("%.1f ", T[k * n * m + j * n + i] - 273.15);
+                fprintf(f, "%.3f ", T[k * n * m + j * n + i] - 273.15);
             }
-            printf("\n");
+            fprintf(f, "\n");
         }
     }
     printf("\n");
