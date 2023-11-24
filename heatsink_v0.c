@@ -18,7 +18,7 @@
 
 /* one can change the matter of the heatsink, its size, the power of the CPU, etc. */
 #define ALUMINIUM
-#define FAST          /* MEDIUM is faster, and FAST is even faster (for debugging) */
+#define MEDIUM          /* MEDIUM is faster, and FAST is even faster (for debugging) */
 #define DUMP_STEADY_STATE
 
 const double L = 0.15;      /* length (x) of the heatsink (m) */

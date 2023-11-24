@@ -2,6 +2,7 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <math.h>
+#include <string.h>
 #include <stdbool.h>
 #include <mpi.h>
 
@@ -619,7 +620,7 @@ int load_data(double *new_chunk, double *chunk, int *dim_chunk, int my_rank, int
     int save = 0;
     fscanf(f, "%d", &save);
 
-    fprintf(stderr, "ici0\n");
+    //fprintf(stderr, "ici save : %d\n", save);
 
     /* case with no saving */
     if (save == 0) {
@@ -631,87 +632,98 @@ int load_data(double *new_chunk, double *chunk, int *dim_chunk, int my_rank, int
 
     }
 
-    fprintf(stderr, "ici1\n");
+    //fprintf(stderr, "ici1\n");
     
     /* case with a previous save */
     int rank = -1;
     double val = 0.;
-    int nbr_char = 1024; // peut poser probleme
+    int nbr_char = 2048; // peut poser probleme
     char *line = malloc(nbr_char*sizeof(char));
     if (line == NULL) {
         fprintf(stderr, "load malloc failed\n");
         return EXIT_FAILURE;
     }
 
-    fprintf(stderr, "ici2\n");
+    //fprintf(stderr, "ici2\n");
 
-    fscanf(f, "%lf %d", t, n_steps);
+    fscanf(f, "%lf %d\n", t, n_steps);
     
     fprintf(stderr, "t=%lf, n_steps=%d\n", *t, *n_steps);
-    
     while (fgets(line, nbr_char, f) != NULL) {
-        fprintf(stderr, "ici2 1/2 %s\n", line);
-        if (scanf(line, "%d", rank) == EOF) {
+        //fprintf(stderr, "my_rank %d ici2 1/2 %s\n",my_rank, line);
+        if (sscanf(line, "%d", &rank) == EOF) {
             fprintf(stderr, "load scanf failure\n");
             fclose(f);
             return EXIT_FAILURE;
         }
 
-        fprintf(stderr, "ici3\n");
+        //fprintf(stderr, "ici3 rank read %d\n", rank);
 
         if (rank != my_rank) {
             for (int k = 0; k < dim_chunk[2]; ++k) {
                 // read z = ...
-                if (fgets(line, sizeof(line), f) == NULL) {
+                if (fgets(line, nbr_char*sizeof(char), f) == NULL) {
                     fprintf(stderr, "Impossible to jump %d lines. The file is too short.\n", dim_chunk[2]);
                     fclose(f);
                     return EXIT_FAILURE;
                 }
                 // read the data
                 for (int j = 0; j < dim_chunk[1]; ++j) {
-                    if (fgets(line, sizeof(line), f) == NULL) {
+                    if (fgets(line, nbr_char*sizeof(char), f) == NULL) {
                         fprintf(stderr, "Impossible to jump %d lines. The file is too short.\n", dim_chunk[2]);
                         fclose(f);
                         return EXIT_FAILURE;
                     }
+                        
+                    // fprintf(stderr, "my_rank %d line= %s\n",my_rank, line);
+
                 }
             }
-            fprintf(stderr, "ici4\n");
+            //fprintf(stderr, "ici4\n");
         }
 
         
         else {
             for (int k = 0; k < dim_chunk[2]; ++k) {
                 // read z = ...
-                if (fgets(line, sizeof(line), f) == NULL) {
+                if (fgets(line, nbr_char*sizeof(char), f) == NULL) {
                     fprintf(stderr, "Impossible to jump %d lines. The file is too short.\n", dim_chunk[2]);
                     fclose(f);
                     return EXIT_FAILURE;
                 }
 
-                fprintf(stderr, "ici5\n");
+                //fprintf(stderr, "ici5\n");
                 // read the data
                 for (int j = 0; j < dim_chunk[1]; ++j) {
-                    if (fgets(line, sizeof(line), f) == NULL) {
+                    if (fgets(line, nbr_char*sizeof(char), f) == NULL) {
                         fprintf(stderr, "Impossible to jump %d lines. The file is too short.\n", dim_chunk[2]);
                         fclose(f);
                         return EXIT_FAILURE;
                     }
-                    
+                    //fprintf(stderr, "my_rank %d line = %s\n",my_rank, line);
+                    char *tmp = malloc(nbr_char);
+                    strcpy(tmp, line);
                     for (int i = 0; i < dim_chunk[0]; ++i) {
 
-                        if (scanf(line, "%lf", val) == EOF) {
-                            fprintf(stderr, "load scanf failure\n");
-                            fclose(f);
-                            return EXIT_FAILURE;
-                        }
-
+                        if (i == 0)
+                            val = atof(strtok(tmp, " \n"));
+                        else
+                            val = atof(strtok(NULL, " \n"));
+                        // if (sscanf(line+i*8, "%lf", &val) == EOF) {
+                        //     fprintf(stderr, "load scanf failure\n");
+                        //     fclose(f);
+                        //     return EXIT_FAILURE;
+                        // }
+                        // fprintf(stderr,"my_rank %d val %.4lf\n", my_rank, val);
                         chunk[k*dim_chunk[1]*dim_chunk[0] + j*dim_chunk[0] + i] = val;
+                        new_chunk[k*dim_chunk[1]*dim_chunk[0] + j*dim_chunk[0] + i] = val;
                     }
+                    free(tmp);
+                    sscanf(line, "\n");
                 }
-
-                return EXIT_SUCCESS;
+                sscanf(line, "\n");
             }
+            return EXIT_SUCCESS;
         }
     }
     
@@ -767,14 +779,23 @@ int load_data(double *new_chunk, double *chunk, int *dim_chunk, int my_rank, int
 
 
 int store_data(int my_rank, int p, int *dim_chunk, double *chunk, double t, int n_steps) {
-    FILE *f = fopen("save.txt", "w");
-    if (f == NULL) {
-        perror("Erreur lors de l'ouverture du fichier");
-        return EXIT_FAILURE;
-    }
+    
+    FILE *f;
     
     if (my_rank == 0) {
+        f = fopen("save.txt", "w");
+        if (f == NULL) {
+            perror("Erreur lors de l'ouverture du fichier");
+            return EXIT_FAILURE;
+        }
         fprintf(f, "1\n%.3lf %d\n", t, n_steps);
+    }
+    else {
+        f = fopen("save.txt", "a");
+        if (f == NULL) {
+            perror("Erreur lors de l'ouverture du fichier");
+            return EXIT_FAILURE;
+        }
     }
     
     int msg = 0;
@@ -787,7 +808,7 @@ int store_data(int my_rank, int p, int *dim_chunk, double *chunk, double t, int 
         fprintf(f, "# z = %g\n", k * dl);
         for (int j = 0; j < dim_chunk[1]; ++j) {
             for (int i = 0; i < dim_chunk[0]; ++i) {
-                fprintf(f, "%.3f ", chunk[k*dim_chunk[0]*dim_chunk[1] + j*dim_chunk[0] + i]);
+                fprintf(f, "%lf ", chunk[k*dim_chunk[0]*dim_chunk[1] + j*dim_chunk[0] + i]);
             }
             fprintf(f, "\n");
         }
@@ -1038,8 +1059,9 @@ int main(int argc, char **argv)
 
 
 
+
     /* simulating time steps */
-    while (convergence == 0) {
+    while (convergence == 0 /*&& n_steps <= 24251*/) {
         it = n_steps;
 
         /* Update all cells. xy planes are processed, for increasing values of z. */

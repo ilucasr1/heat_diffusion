@@ -125,10 +125,17 @@ int main() {
     */
 
 
-    int *tab = malloc(sizeof(int)*10);
-    free(tab);
-    free(tab);
+    // int *tab = malloc(sizeof(int)*10);
+    // free(tab);
+    // free(tab);
     
+    char *val;
+    int val2;
+    char *line = "salut 2 je 3 suis 4 enzo 5\n";
+    sscanf(line, "%s %d %s\n", val, &val2, line);
+    printf("val=%s, val2=%d\n",val, val2);
+    sscanf(line, "%s %d", val, &val2);
+    printf("val=%s, val2=%d\n",val, val2);
 
     return 0;
 }
