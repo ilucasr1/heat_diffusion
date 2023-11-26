@@ -1,45 +1,57 @@
 # heat_diffusion
+## Compilation
+Compile with 
+```
+make
+``` 
+then execute with 
+```
+make run NB_PROC=p
+``` 
+where p is the number of processus you want to run the simulation on
 
-AMELIORATIONS :
+## Display
+To print the image, follow the instructions printed in the terminal at the end of the execution
 
-1) dans do_halo
-on attend de tout recevoir pour traiter.
-essayer de traiter des qu'on recoit
+## Save Format
 
-2) tout reecrire dans un unique tableau T au lieu de contenir dans T et reorganiser dans R (pour le gather)
-
-3) implementer checkpoint
-
-4) changer association divider <-> dim_chunk (pb si div[1] > 2)
-
-5) tenir compte des pb aux bords si divider ne divise pas n/m/o
-
-
-
-REPRENDRE : 
-
-1) comprendre d'ou vient le decalage de 0.1
-
-2) NETTOYER LE CODE
-
-3) copier code de grid
-
-puis faire de meme pour dim >= 1
+first line : 0 = no save OR p = save with p the number of processus we used
+seconde line : time and n_steps
+then 1 blocks per processus (in the order of their rank) :
+    1st line : my_rank
+    then 1 block per step on z axe :
+        1st line : position on z axe
+        then 1 line per step on y axe :
+            1 value per step on x axe
 
 
-
-
-FORMAT save.txt
-
-0 : no save / 1 : save
-time && n_steps
-my_rank
-z0
+example :
+```
+4
+144.000 36000
+0
+z = 0
+293.150000 293.150000 ... 293.150000 293.150000
 .
 .
 .
-zn
-my_rank
+293.150000 293.150000 ... 293.150000 293.150000
+z = 0.002
+.
+.
+.
+z = 0.056
+307.774269 307.815516 ... 303.161329 303.048255
+.
+.
+.
+307.774268 307.815516 ... 303.161329 303.048255
+1
 .
 . 
 .
+3
+.
+.
+.
+```

@@ -23,7 +23,7 @@
 
 /* one can change the matter of the heatsink, its size, the power of the CPU, etc. */
 #define ALUMINIUM
-#define FAST         /* MEDIUM is faster, and FAST is even faster (for debugging) */
+#define CHALLENGE        /* MEDIUM is faster, and FAST is even faster (for debugging) */
 #define DUMP_STEADY_STATE
 
 const double L = 0.15;      /* length (x) of the heatsink (m) */
@@ -89,6 +89,9 @@ double euros_per_kg = 0.083;
 const double Stefan_Boltzmann = 5.6703e-8;  /* (W / m^2 / K^4), radiation of black body */
 const double heat_transfer_coefficient = 10;    /* coefficient of thermal convection (W / m^2 / K) */
 double CPU_surface;
+
+int it = 0; //pour des test
+
 
 /* 
  * Return True if the CPU is in contact with the heatsink at the point (x,y).
@@ -611,7 +614,7 @@ int load_data(double *new_chunk, double *chunk, int *dim_chunk, int my_rank, int
     fscanf(f, "%d", &save);
 
     /* case with no saving */
-    if (save == 0 || save != p) {
+    if (save == 0) {
         for (int u = 0; u < dim_chunk[0]*dim_chunk[1]*dim_chunk[2]; u++) {
             new_chunk[u] = watercooling_T + 273.15;
             chunk[u] = watercooling_T + 273.15;
@@ -619,16 +622,17 @@ int load_data(double *new_chunk, double *chunk, int *dim_chunk, int my_rank, int
         return EXIT_SUCCESS;
 
     }
+
+    /* case with a previous save but run on different nbr of processus */
+    else if (save != p) {
+        fprintf(stderr, "error load, previous save was run on different number of precessus\n");
+        return EXIT_FAILURE;
+    }
     
     /* case with a previous save run on same nbr of processus */
     int rank = -1;
     double val = 0.;
-    int nbr_char = 2048;
-
-    #ifdef CHALLENGE
-    nbr_char *= 2;
-    #endif
-
+    int nbr_char = 2048; // peut poser probleme
     char *line = malloc(nbr_char*sizeof(char));
     if (line == NULL) {
         fprintf(stderr, "load malloc failed\n");
@@ -637,6 +641,7 @@ int load_data(double *new_chunk, double *chunk, int *dim_chunk, int my_rank, int
 
     fscanf(f, "%lf %d\n", t, n_steps);
     
+    fprintf(stderr, "t=%lf, n_steps=%d\n", *t, *n_steps);
     while (fgets(line, nbr_char, f) != NULL) {
         if (sscanf(line, "%d", &rank) == EOF) {
             fprintf(stderr, "load scanf failure\n");
@@ -817,10 +822,7 @@ int main(int argc, char **argv)
     time_t begin = time(NULL);
     int my_rank; /* rank of the process */
     int p; /* number of processes */
-    int dim = 3;
-    if (argc > 1)
-        dim = atoi(argv[1]);
-
+       
     /* Initialisation */
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
@@ -832,11 +834,10 @@ int main(int argc, char **argv)
     int m = ceil(E / dl);
     int o = ceil(l / dl);
     int *dividers = get_3_dividers(p);
-
+    int dim = 3;
     for (int i = 0; i < 3; i++){
-    	if (dividers[i] == 1 && dim > 1) dim--;
+    	if (dividers[i] == 1) dim--;
     }
-
     int *dim_chunk = malloc(3*sizeof(int));
     if (dim_chunk == NULL){
     	perror("malloc");
@@ -866,11 +867,11 @@ int main(int argc, char **argv)
         fprintf(stderr, "CPU\n");
         fprintf(stderr, "\tPower = %.0fW\n", CPU_TDP);
         fprintf(stderr, "\tArea = %.1f cm^2\n", CPU_surface * 10000);
-        fprintf(stderr, "MODELISATION\n");
-        fprintf(stderr, "\texcess %d %d %d\n", excess[0], excess[1], excess[2]);
-        fprintf(stderr, "\tn %d, dim_chunk[0] %d\n", n, dim_chunk[0]);
-        fprintf(stderr, "\tm %d, dim_chunk[1] %d\n", m, dim_chunk[1]);
-        fprintf(stderr, "\to %d, dim_chunk[2] %d\n", o, dim_chunk[2]);
+        fprintf(stderr, "excess %d %d %d\n", excess[0], excess[1], excess[2]);
+
+        fprintf(stderr, "n %d, dim_chunk[0] %d\n", n, dim_chunk[0]);
+        fprintf(stderr, "m %d, dim_chunk[1] %d\n", m, dim_chunk[1]);
+        fprintf(stderr, "o %d, dim_chunk[2] %d\n", o, dim_chunk[2]);
     }
 
     int size_chunk = dim_chunk[0]*dim_chunk[1]*dim_chunk[2];
@@ -971,6 +972,7 @@ int main(int argc, char **argv)
             exit(1);
         }
     }
+    fprintf(stderr, "n %d m %d o %d\n",n,m,o);
     
     /* let's go! we switch the CPU on and launch the simulation until it reaches a stationary state. */
     double t = 0;
@@ -979,9 +981,18 @@ int main(int argc, char **argv)
 
     /* initially the heatsink is at the temperature of the water-cooling fluid */
     load_data(new_chunk, chunk, dim_chunk, my_rank, p, &n_steps, &t);
+    // for (int u = 0; u < dim_chunk[0]*dim_chunk[1]*dim_chunk[2]; u++) {
+    //     new_chunk[u] = watercooling_T + 273.15;
+    //     chunk[u] = watercooling_T + 273.15;
+    // }
+
+
+
+
 
     /* simulating time steps */
     while (convergence == 0) {
+        it = n_steps;
 
         /* Update all cells. xy planes are processed, for increasing values of z. */
 	/* Ask for all the Irecv (check the border conditions)
@@ -1003,31 +1014,37 @@ int main(int argc, char **argv)
         int cpt = 0;
         MPI_Request *rec = calloc(nb_neigh, sizeof(MPI_Request));
         if (test_f) {
+            // printf("0\n");
             MPI_Irecv(front_r, (dim_chunk[0])*(dim_chunk[1]),
                     MPI_DOUBLE, my_rank-dividers[0]*dividers[1], 0, MPI_COMM_WORLD,
                     &rec[cpt++]);
         }
         if (test_b) {
+            // printf("1\n");
             MPI_Irecv(back_r, (dim_chunk[0])*(dim_chunk[1]),
                     MPI_DOUBLE, my_rank+dividers[0]*dividers[1], 0, MPI_COMM_WORLD,
                     &rec[cpt++]);
         }
         if (test_s) {
+            // printf("2\n");
             MPI_Irecv(south_r, (dim_chunk[0])*(dim_chunk[2]),
                     MPI_DOUBLE, my_rank-dividers[0], 0, MPI_COMM_WORLD,
                     &rec[cpt++]);
         } 
         if (test_n) {
+            // printf("3\n");
             MPI_Irecv(north_r, (dim_chunk[0])*(dim_chunk[2]),
                     MPI_DOUBLE, my_rank+dividers[0], 0, MPI_COMM_WORLD,
                     &rec[cpt++]);
         }
         if (test_w) {
+            // printf("4\n");
             MPI_Irecv(west_r, (dim_chunk[1])*(dim_chunk[2]),
                     MPI_DOUBLE, my_rank-1, 0, MPI_COMM_WORLD,
                     &rec[cpt++]);
         }
         if (test_e) {
+            // printf("5\n");
             MPI_Irecv(east_r, (dim_chunk[1])*(dim_chunk[2]),
                     MPI_DOUBLE, my_rank+1, 0, MPI_COMM_WORLD,
                     &rec[cpt]);
@@ -1139,16 +1156,33 @@ int main(int argc, char **argv)
                     &sen[cpt]);
         }
         
+
+        // int *edges = calloc(sizeof(int), 4);
+        // if (edges == NULL) {
+        //     perror("malloc main");
+        //     return EXIT_FAILURE;
+        // }
+        //fprintf(stderr, "avant 2  %f\n", chunk[0]);
+
         /* compute the inside of the chunk */
         for (int k = 1; k < dim_chunk[2]-1; ++k) {
             do_xy_plane(chunk, new_chunk, n, m, o, k, dim_chunk, my_rank, excess);
         }
+        //fprintf(stderr, "avant 1 %f\n", chunk[0]);
+
+        // MPI_Barrier(MPI_COMM_WORLD);
+        int indx;
+
+        for (int i = 0; i < nb_neigh; ++i) {
+            MPI_Waitany(nb_neigh, rec, &indx, MPI_STATUSES_IGNORE);
+        }
         
-        MPI_Waitall(nb_neigh, rec, MPI_STATUSES_IGNORE);
-        
+        //fprintf(stderr, "avant %f\n", chunk[0]);
         do_halo(chunk, new_chunk, front_r, back_r, south_r, north_r, west_r, east_r, n, m, o, dim_chunk, my_rank, excess);
-       
-       
+        //fprintf(stderr, "apres %f\n", chunk[0]);
+
+        // fprintf(stderr, "test15\n");
+
         /* each second, we test the convergence, and print a short progress report */
         //test it locally, and sum all the partial values with MPI_allReduceand MPI_SUM
         //Be careful : the sqrt has to be done on the total sum 
@@ -1158,22 +1192,34 @@ int main(int argc, char **argv)
             double delta_T = 0;
             double max = -INFINITY;
             int cpt = 0;
+            // FILE *f = fopen("tmp_save.txt", "w");
             for (int u = 0; u < dim_chunk[0]*dim_chunk[1]*dim_chunk[2]; ++u) {
+                // if (new_chunk[u] < chunk[u])
+                // {fprintf(stderr,"new_c %f c %f \n", new_chunk[u], chunk[u]);}
                 int cond1 = (n%dividers[0] != 0 && my_rank%dividers[0] == dividers[0]-1 && 
                          u%dim_chunk[0] >= dim_chunk[0]-excess[0]);
-
                 int cond2 = (m % dividers[1] != 0 && (my_rank/dividers[0])%dividers[1] == dividers[1]-1 && 
                         (u/dim_chunk[0])%dim_chunk[1] >= dim_chunk[1]-excess[1]);
-                        
                 int cond3 = (o % dividers[2] != 0 && my_rank/(dividers[0]*dividers[1]) == dividers[2]-1 && 
                          u/(dim_chunk[0]*dim_chunk[1]) >= dim_chunk[2]-excess[2]);
-                         
-                if (cond1 || cond2 || cond3) continue;
+                if (cond1 || cond2 || cond3) {
+                    // fprintf(stderr, "skipped my_rank %d u %d chunk[u] %lf cond %d %d %d\n", my_rank, u, chunk[u], cond1, cond2, cond3);
+                    continue;
+                }
                 cpt++;
+                // if (my_rank == 0) {
+                //     fprintf(f, "chunk[u] %lf\t new_chunk[u] %lf\n", chunk[u], new_chunk[u]);
+                // }
                 delta_T += (new_chunk[u] - chunk[u]) * (new_chunk[u] - chunk[u]);
                 if (new_chunk[u] > max)
                     max = new_chunk[u];
             }
+            // fclose(f);
+            // fprintf(stderr,"cpt %d delta %lf\n", cpt, delta_T);
+            // if (my_rank == 2) {
+
+            //     fprintf(stderr, "chunk[u] %f\n",  chunk[495]);
+            // }
 
             /*send all sums to 0*/
             double sum = 0;
@@ -1225,7 +1271,148 @@ int main(int argc, char **argv)
     free(north_s);
     free(west_s);
     free(east_s);
+    //fprintf(stderr, "fin while %d dim %d\n", my_rank, dim);
     
+    // if (dim == 3) {
+    //     MPI_Comm row_comm;
+    //     MPI_Comm_split(MPI_COMM_WORLD, my_rank/dividers[0], my_rank%dividers[0], &row_comm);
+    //     double *row_gather = NULL;
+    //     if (my_rank%dividers[0] == 0) {
+    //         row_gather = malloc(dividers[0]*size_chunk*sizeof(double));
+    //         if (row_gather == NULL) {
+    //             perror("main : malloc row_gather");
+    //             return EXIT_FAILURE;
+    //         }
+    //     }
+	//       // fprintf(stderr, "entry gather dim 3 my_rank %d \n", my_rank);
+    //     int *sizes = malloc(p*sizeof(int));
+    //     if (sizes == NULL) {
+    //         perror("main : malloc sizes");
+    //         return EXIT_FAILURE;
+    //     }
+    //     MPI_Gather(size_chunk, 1, MPI_INT, sizes, 1, MPI_INT, 0, row_comm);
+
+    //     MPI_Gatherv(chunk, size_chunk, MPI_DOUBLE, row_gather,
+    //                sizes, MPI_DOUBLE, 0, row_comm);
+	//       // fprintf(stderr, "exit gather dim 3 my_rank %d \n", my_rank);
+    //     free(chunk);
+    //     chunk = NULL;
+
+    //     size_chunk = dividers[0]*size_chunk;
+
+    //     if (my_rank%dividers[0] == 0) {
+    //         chunk = malloc(size_chunk * sizeof(double));
+            
+    //         /* reorganisation of the chunk so it is in the write order */
+    //         for (int k = 0; k < dim_chunk[2]; ++k) {
+    //             for (int j = 0; j < dim_chunk[1]; ++j) {
+    //                 for (int i = 0; i < dim_chunk[0]; ++i) {
+    //                     for (int l = 0; l < dividers[0] ; ++l) {
+
+    //                         chunk[ dividers[0]*k*dim_chunk[0]*dim_chunk[1] + 
+    //                                 dividers[0]*j*dim_chunk[0] + l*dim_chunk[0] + i ] =
+                                
+    //                                 row_gather[ l*(dim_chunk[0]*dim_chunk[1]*dim_chunk[2]) +
+    //                                             k*dim_chunk[0]*dim_chunk[1] + j*dim_chunk[0] + i ];
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     free(row_gather);
+
+    //     dim_chunk[0] = dividers[0]*dim_chunk[0];
+    // }
+
+    // MPI_Barrier(MPI_COMM_WORLD);    
+
+    // if (dim >= 2) {
+    //     MPI_Comm col_comm;
+    //     int color = (my_rank/(dividers[0]*dividers[1]))*dividers[0] + 
+    //                 my_rank%dividers[0];
+    //     int key = (my_rank%(dividers[0]*dividers[1]))/dividers[0];
+    //     MPI_Comm_split(MPI_COMM_WORLD, color, key, &col_comm);
+    //     double *col_gather = NULL;
+    //     if (key == 0) {
+    //         col_gather = malloc(dividers[1]*size_chunk*sizeof(double));
+    //         if (col_gather == NULL) {
+    //             perror("main : malloc col_gather");
+    //             return EXIT_FAILURE;
+    //         }
+    //     }
+
+    //     MPI_Barrier(MPI_COMM_WORLD);
+
+    //     //fprintf(stderr, "entry gather dim 2 my_rank %d color %d key %d\n", my_rank, color, key);
+    //     if (my_rank%dividers[0] == 0) {
+    //         //fprintf(stderr, "inside gather dim 2 my_rank %d\n", my_rank);
+
+    //         MPI_Gather(chunk, size_chunk, MPI_DOUBLE, col_gather,
+    //                    size_chunk, MPI_DOUBLE, 0, col_comm);
+    //     }
+    //     //fprintf(stderr, "exit gather dim2 my_rank %d\n", my_rank);
+
+        
+    //     free(chunk);
+    //     chunk = NULL;
+    //     size_chunk = dividers[1]*size_chunk;
+
+    //     MPI_Barrier(MPI_COMM_WORLD);
+
+    //     if (key == 0) {
+    //         // fprintf(stderr, "inside loop my_rank %d size_chunk %d\n", my_rank, size_chunk);
+    //         chunk = malloc(size_chunk * sizeof(double));
+    //         for (int k = 0; k < dim_chunk[2]; ++k) {
+    //             for (int j = 0; j < dim_chunk[1]; ++j) {
+    //                 for (int i = 0; i < dim_chunk[0]; ++i) {
+    //                     for (int l = 0; l < dividers[1] ; ++l) {
+    //                         chunk[ dividers[1]*k*dim_chunk[0]*dim_chunk[1] + 
+    //                                 l*dim_chunk[0]*dim_chunk[1] + 
+    //                                 j*dim_chunk[0] + i] = 
+                                
+    //                             col_gather[l*(dim_chunk[0]*dim_chunk[1]*dim_chunk[2]) + 
+    //                                 k*dim_chunk[0]*dim_chunk[1] + j*dim_chunk[0] + i];
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     }
+
+    //     free(col_gather);
+
+    //     dim_chunk[1] = dim_chunk[1]*dividers[1];
+    // }
+    // // fprintf(stderr, "fin zonedim2 %d dim %d\n", my_rank, dim);
+    
+    // MPI_Barrier(MPI_COMM_WORLD);
+
+    // double *T = NULL;
+    // if (my_rank == 0) {
+    //     T = calloc(dividers[2]*size_chunk, sizeof(double));
+    //     //fprintf(stderr, "div %d size_chunk %d\n", dividers[2], size_chunk);
+
+    //     if (T == NULL) {
+    //         perror("main: malloc T");
+    //         return EXIT_FAILURE;
+    //     }
+    // }
+    
+    // //fprintf(stderr, "here %d\n", my_rank);
+    // MPI_Comm final_comm;
+    // MPI_Comm_split(MPI_COMM_WORLD, (my_rank%(dividers[0]*dividers[1])), 
+    //         my_rank/(dividers[0]*dividers[1]), &final_comm);
+    // // fprintf(stderr, "test 3 my_rank %d\n", my_rank);
+    // // fprintf(stderr, "after %d\n", my_rank);
+
+    // // fprintf(stderr, "n1 %d, n2 %d, n3 %d\n", dim_chunk[0]*p,dim_chunk[1]*p,dim_chunk[2]*p);
+    // // fprintf(stderr, "entry gather %d\n", my_rank);
+    // if (my_rank%(dividers[0]*dividers[1]) == 0) {
+    //     //fprintf(stderr, "inside gather my_rank %d\n", my_rank);
+    //     MPI_Gather(chunk, size_chunk, MPI_DOUBLE, T,
+    //                 size_chunk, MPI_DOUBLE, 0, 
+    //                 final_comm);
+    // }
+    //  //fprintf(stderr, "exit gather %d\n", my_rank);
     double *T = NULL;
     double *R = NULL;
     int* sizes_chunk = NULL;
@@ -1258,7 +1445,7 @@ int main(int argc, char **argv)
     int tmp_size_chunk = (dim_chunk[0]- ((my_rank%dividers[0] == dividers[0]-1 && n % dividers[0] != 0)?excess[0]:0))*
                          (dim_chunk[1]- (((my_rank/dividers[0])%dividers[1] == dividers[1]-1 && m % dividers[1] != 0)?excess[1]:0))*
                          (dim_chunk[2]- ((my_rank/(dividers[0]*dividers[1]) == dividers[2]-1 && o % dividers[2] != 0)?excess[2]:0));
-
+    // fprintf(stderr, "rank %d tm_size_chunk %d\n", my_rank, tmp_size_chunk);
     if ( (my_rank%dividers[0])*dim_chunk[0] >= n ||
         ((my_rank/dividers[0])%dividers[1])*dim_chunk[1] >= m ||
          (my_rank/(dividers[0]*dividers[1]))*dim_chunk[2] >= o)
@@ -1268,6 +1455,10 @@ int main(int argc, char **argv)
     if (my_rank == 0) {
         for (int i = 1; i < p; ++i) {
             positions[i] = positions[i-1] + sizes_chunk[i-1];
+            fprintf(stderr, "rank %d pos %d\n", my_rank, positions[i]);
+        }
+        for (int i = 0; i < p; ++i) {
+            fprintf(stderr, "sizes_chunk %d, positions %d\n", sizes_chunk[i], positions[i]);
         }
     }
 
@@ -1296,8 +1487,19 @@ int main(int argc, char **argv)
         chunk = tmp_chunk;
     }
     
+    fprintf(stderr, "my_rank %d size_chunk %d\n", my_rank, size_chunk);
     MPI_Gatherv(chunk, tmp_size_chunk, MPI_DOUBLE,T, sizes_chunk, positions,MPI_DOUBLE, 0, MPI_COMM_WORLD);
     
+    if (my_rank == 0)
+        fprintf(stderr, "rank %d T[0] %f\n", my_rank, T[2279]);
+
+    fprintf(stderr, "my_rank %d test 2\n", my_rank);
+    //  if (my_rank%dividers[0] == dividers[0]-1 && n % dividers[0] != 0) 
+    //     excess[0]++;
+    // if ((my_rank/dividers[0])%dividers[1] == dividers[1]-1 && m % dividers[1] != 0) 
+    //     excess[1]++;
+    // if (my_rank/dividers[2] == dividers[2]-1 && o % dividers[2] != 0) 
+        // excess[2]++;
     int size_line = dim_chunk[0]*dividers[0] - excess[0];
     int size_face = (dim_chunk[0]*dividers[0] - excess[0])*(dim_chunk[1]*dividers[1] - excess[1]);
     if (my_rank == 0) {
@@ -1323,7 +1525,38 @@ int main(int argc, char **argv)
                                         + k*(dim_chunk[0]-excess[0]*cond0)*(dim_chunk[1]-excess[1]*cond1)
                                         + j*(dim_chunk[0]-excess[0]*cond0) 
                                         + i;
-                                
+                                /*d2*dim_chunk[2]*dim_chunk[0]*dividers[0]*dim_chunk[1]*dividers[1] -
+                                    d2*dim_chunk[2]*(dim_chunk[1]*dividers[1]*excess[0]
+                                    + dim_chunk[0]*dividers[0]*excess[1] -excess[0]*excess[1]) +
+                                    d1*dim_chunk[1]*dim_chunk[0]*dividers[0] -d1*dim_chunk[1]*excess[0] 
+                                    + d0*dim_chunk[0] +
+                                    k*dividers[0]*dividers[1]*dim_chunk[0]*dim_chunk[1] - 
+                                    k*(dim_chunk[0]*dividers[0]*excess[1] + dim_chunk[1]*dividers[1]*excess[0] - excess[0]*excess[1]) +
+                                    j*dim_chunk[0]*dividers[0] - j*excess[0]+ i*/
+
+                                // int v_relat = (d0+dividers[0]*d1 + dividers[0]*dividers[1]*d2)*(dim_chunk[0]*dim_chunk[1]*dim_chunk[2]) 
+                                //               + k*(dim_chunk[0]-excess[0]*cond0)*(dim_chunk[1]-excess[1]*cond1) 
+                                //               + j*(dim_chunk[0]-excess[0]*cond0)
+                                //               + i;
+
+                                // int v = v_relat
+                                //         - d2*dim_chunk[2]*(dim_chunk[0]*dividers[0]*excess[1]
+                                //         + dim_chunk[1]*dividers[1]*excess[0] - excess[0]*excess[1])
+                                //         - d1*dim_chunk[1]*dim_chunk[2]*excess[0]
+                                //         - ((d0 == dividers[0]-1) ? (k*(dim_chunk[1] - excess[1]*cond1) + j)*excess[0] : 0)
+                                //         - ((d1 == dividers[1]-1) ? (d0*dim_chunk[0]*dim_chunk[2]
+                                //         + k*(dim_chunk[0] -excess[0]*cond0) 
+                                //         + ((j == dim_chunk[1]-1) ? i:0))*excess[1] : 0);
+                                    /*((d2 == dividers[2]-1)?(d1*dim_chunk[1]*dividers[0]*dim_chunk[0] +
+                                    d0)*excess[2] :0)*/
+                                    /*v_relat - (v_relat/(dim_chunk[0]*dividers[0]))*excess[0] -
+                                    (v_relat/(dim_chunk[0]*dividers[0]*dim_chunk[1]*dividers[1]))*
+                                    (dim_chunk[0]*dividers[0]*excess[1] - excess[0]*excess[1]) -
+                                    ((v_relat/(dim_chunk[1]*dividers[1]) == dim_chunk[1]*dividers[1] - 1)?
+                                    v_relat%(dividers[0]*dim_chunk[0])*excess[1]:0)*/
+                                // if (u == 8737 || (j == 0 && k == 29 && d0 == 1))     
+                                //     fprintf(stderr, "u %d v %d T[v] %lf\n", u, v, T[v]);
+
                                 R[u] = T[v];
 
 
@@ -1335,7 +1568,7 @@ int main(int argc, char **argv)
         }
 
         #ifdef DUMP_STEADY_STATE
-        FILE *f = fopen("data.txt", "w");
+        FILE *f = fopen("data_test.txt", "w");
         fprintf(stderr,"###### STEADY STATE; t = %.1f\n", t);
         for (int k = 0; k < o; ++k) {   // z
             fprintf(f, "# z = %g\n", k * dl);
@@ -1349,17 +1582,40 @@ int main(int argc, char **argv)
         fclose(f);
 
         fprintf(stderr,"\n");
-        fprintf(stderr, "For graphical rendering: python3 rendu_picture_steady.py data.txt %d %d %d\n", n, m, o);
+        fprintf(stderr, "For graphical rendering: python3 rendu_picture_steady.py [filename.txt] %d %d %d\n", n, m, o);
         #endif
     }
+    // if (my_rank == 1) {
+    //     #ifdef DUMP_STEADY_STATE
+    //     FILE *f = fopen("data_test.txt", "w");
+    //     fprintf(stderr,"###### STEADY STATE; t = %.1f\n", t);
+    //     for (int k = 0; k < dim_chunk[2]-face_back*excess[2]; ++k) {
+    //         fprintf(f, "# z = %g\n", k * dl);
+    //         for (int j = 0; j < dim_chunk[1]-face_north*excess[1]; ++j) {
+    //             for (int i = 0; i < dim_chunk[0]-face_right*excess[0]; ++i) {
+    //                 fprintf(f,"%.3f ", chunk[ k * (dim_chunk[0]) * (dim_chunk[1]) 
+    //                                         + j * (dim_chunk[0]) + i] - 273.15);
+    //             }
+    //             fprintf(f,"\n");
+    //         }
+    //     }
+
+    //     fprintf(stderr,"\n");
+    //     fprintf(stderr, "For graphical rendering: python3 rendu_picture_steady.py [filename.txt] %d %d %d\n", n, m, o);
+    //     #endif
+    // }
     
     FILE *f = fopen("save.txt", "w");
     fprintf(f, "0");
     fclose(f);
 
+    // fprintf(stderr, "end prog %d\n", my_rank);
+
     MPI_Finalize();
 
+
     free(chunk);
+
     free(excess);
     free(new_chunk);
     free(dim_chunk);
