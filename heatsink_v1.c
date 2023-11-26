@@ -23,7 +23,7 @@
 
 /* one can change the matter of the heatsink, its size, the power of the CPU, etc. */
 #define ALUMINIUM
-#define FAST         /* MEDIUM is faster, and FAST is even faster (for debugging) */
+#define CHALLENGE         /* MEDIUM is faster, and FAST is even faster (for debugging) */
 #define DUMP_STEADY_STATE
 
 const double L = 0.15;      /* length (x) of the heatsink (m) */
@@ -51,7 +51,7 @@ double dt = 0.001;
 
 #ifdef CHALLENGE
 double dl = 0.0001;
-double dt = 0.00001;
+double dt = 0.0001;
 #endif
 
 /* sink_heat_capacity: specific heat capacity of the heatsink (J / kg / K) */
@@ -833,18 +833,27 @@ int main(int argc, char **argv)
     int o = ceil(l / dl);
     int *dividers = get_3_dividers(p);
 
-    for (int i = 0; i < 3; i++){
-    	if (dividers[i] == 1 && dim > 1) dim--;
-    }
-
     int *dim_chunk = malloc(3*sizeof(int));
     if (dim_chunk == NULL){
     	perror("malloc");
 	exit(1);
     }
+    if (dim <= 2) {
+        if (dim == 1) {
+            dividers[0] *= dividers[2];
+            dividers[2] = 1;
+        }
+        dividers[0] *= dividers[1];
+        dividers[1] = 1;
+    }    
+    
+    dividers[0]=15;
+    dividers[1]=4;
+    dividers[2]=12;
     dim_chunk[0] = ceil(n/(float)dividers[0]);
     dim_chunk[1] = ceil(m/(float)dividers[1]);
     dim_chunk[2] = ceil(o/(float)dividers[2]);
+    
     int *excess = calloc(3,sizeof(int));
     if (excess == NULL) {
         perror("main malloc : excess");
@@ -1371,8 +1380,8 @@ int main(int argc, char **argv)
 
     time_t end = time(NULL);
     if (my_rank == 0) {
-        FILE *f = fopen("data.txt", "a");
-        fprintf(f, "NORMAL %d processus : Temps d'execution : %ld secondes\n",p, (end-begin));
+        FILE *f = fopen("data_test.txt", "a");
+        fprintf(f, "CHALLENGE %d processus : Temps d'execution : %ld secondes\n",p, (end-begin));
         fclose(f);
     }
     exit(EXIT_SUCCESS);
